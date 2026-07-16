@@ -1,12 +1,28 @@
-# pub-cds-scc
+# CDS GPU Pool
 
-Public dashboard of the CDS GPU pool at Boston University's Shared Computing
-Cluster: what hardware the pool has, how it is used, and how much capacity is
-free. Data updates monthly and covers the trailing six complete months.
+Public dashboard of the CDS buy-in GPU pool on the BU Shared Computing Cluster:
+the hardware, its utilization, and free capacity. Self-contained `index.html`,
+no server. Updates monthly, trailing six complete months.
 
-View it: https://cluster.cds.bu.edu/
+## View it
 
-`data/public_data.json` holds the aggregated figures behind the page. No user
-or project identifiers appear anywhere in this repository, by construction:
-the private build pipeline aggregates them away and a gate refuses any publish
-that carries one. Build code is private by design.
+**https://cluster.cds.bu.edu/** (until DNS lands: https://bu-cds.github.io/pub-cds-scc/)
+
+Offline copy:
+
+```
+git show origin/page:index.html > page.html
+```
+
+## Layout
+
+```
+page branch: index.html    the dashboard, data inlined
+main branch: data/         monthly public_data.json snapshots
+```
+
+## De-identification
+
+No usernames, projects, queues, or hostnames anywhere in this repo, by
+construction: aggregated away at build, gated before every publish.
+Build code lives in the internal repo.
