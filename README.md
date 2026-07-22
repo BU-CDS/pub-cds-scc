@@ -6,7 +6,7 @@ no server. Updates monthly, trailing six complete months.
 
 ## View it
 
-**https://cluster.cds.bu.edu/** (until DNS lands: https://bu-cds.github.io/pub-cds-scc/)
+**https://cluster.cds.bu.edu/**
 
 Offline copy:
 
