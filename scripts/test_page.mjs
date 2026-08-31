@@ -1,10 +1,11 @@
 // test_page.mjs — assert the built public page's STRUCTURE, JS-execution safety, and
 // de-id/blocklist policy for the portal-lift design (spec Revision R1): twin pool
-// panels (GPU left, CPU right), a month-grain period selector (default: trailing 3
-// complete months), and per-pool KPI totals cards recomputed by inline JS. The old
-// zero-JS rule is dead; this suite checks the inline script is present, self-
-// contained (no external requests / storage / theme machinery), and functionally
-// correct (simulated period change recomputes the KPI cards).
+// panels (GPU left, CPU right), a segmented [Past 3|6|All months] period bar plus a
+// month-only <select> and a resolved-range text (default: trailing 3 complete
+// months), and per-pool KPI totals cards recomputed by inline JS. The old zero-JS
+// rule is dead; this suite checks the inline script is present, self-contained (no
+// external requests / storage / theme machinery), and functionally correct
+// (simulated segment clicks / month picks recompute the KPI cards and range text).
 //
 // Run: module load nodejs/20.12.2 && node scripts/test_page.mjs [index.html]
 // Exit 0 = pass, 1 = wrong, 2 = usage.
@@ -27,6 +28,17 @@ const ok  = m => console.log('PASS: ' + m);
 const bad = m => { console.log('FAIL: ' + m); FAILS++; };
 const has = (s, needle, m) => (s.includes(needle) ? ok(m) : bad(m + ' -- missing: ' + JSON.stringify(needle).slice(0, 90)));
 const not = (s, needle, m) => (s.includes(needle) ? bad(m + ' -- present: ' + JSON.stringify(needle).slice(0, 90)) : ok(m));
+
+// mirrors the page's own monthLabel()/rangeText() (build_cluster_page.R JS block)
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLbl = (m, withYear) => MON[+m.slice(5, 7) - 1] + (withYear ? ' ' + m.slice(0, 4) : '');
+const rangeTextJS = (months) => {
+  if (!months.length) return '';
+  const a = months[0], b = months[months.length - 1];
+  if (a === b) return '· ' + monthLbl(a, true);
+  const sameYear = a.slice(0, 4) === b.slice(0, 4);
+  return '· ' + monthLbl(a, !sameYear) + ' – ' + monthLbl(b, true);
+};
 
 // ---- 0. exactly one inline <script>; no external requests / storage / theme machinery ----
 // (the old zero-JS rule is dead per spec Revision R1 -- inline JS is now required, but it
@@ -62,7 +74,7 @@ const P = sel => parentOf[sel] || '(absent)';
 P('div.deckrow') === 'main' ? ok('a deckrow is a direct child of main') : bad('deckrow parent is ' + P('div.deckrow'));
 P('div#gpupanel.deck.pool-gpu') === 'div.deckrow' ? ok('GPU panel sits inside a deckrow') : bad('GPU panel parent is ' + P('div#gpupanel.deck.pool-gpu'));
 P('div#cpupanel.deck.pool-cpu') === 'div.deckrow' ? ok('CPU panel sits inside a deckrow') : bad('CPU panel parent is ' + P('div#cpupanel.deck.pool-cpu'));
-P('div#periodctl.deck') === 'main' ? ok('period control is a direct child of main') : bad('period control parent is ' + P('div#periodctl.deck'));
+P('div#periodbar.periodbar') === 'main' ? ok('period control bar is a direct child of main') : bad('period control bar parent is ' + P('div#periodbar.periodbar'));
 P('div#gpucard.deck') === 'div.deckrow' ? ok('GPU totals card sits inside a deckrow') : bad('GPU totals card parent is ' + P('div#gpucard.deck'));
 P('div#cpucard.deck') === 'div.deckrow' ? ok('CPU totals card sits inside a deckrow') : bad('CPU totals card parent is ' + P('div#cpucard.deck'));
 
@@ -101,15 +113,25 @@ for (const needle of ['livebadge', 'stalebadge', 'livedot', 'LIVE</span>', '>STA
 // still be present, not forbidden.
 has(html, 'updated quarterly', 'footer keeps the "updated quarterly" stamp deploy.sh checks for');
 
-// ---- 5. period selector: present, month-grain, default = trailing 3 complete months ----
-has(html, '<select id="period"', 'period <select> is present');
-/<option value="past3"[^>]*\bselected\b[^>]*>Past 3 months<\/option>/.test(html)
-  ? ok('period selector defaults to "Past 3 months"')
-  : bad('period selector default option is not "Past 3 months" selected');
-has(html, '<option value="past6">Past 6 months</option>', 'period selector offers "Past 6 months"');
-has(html, '<option value="all">All months</option>', 'period selector offers "All months"');
+// ---- 5. period controls: segmented [Past 3|6|All] bar + month select + range text ----
+has(html, 'class="seg"', 'segmented period bar (.seg) is present');
+for (const lbl of ['Past 3 months', 'Past 6 months', 'All months'])
+  has(html, '>' + lbl + '<', 'segmented bar offers "' + lbl + '"');
+/<button id="seg-p3" class="on"[^>]*>Past 3 months<\/button>/.test(html)
+  ? ok('segmented bar defaults to "Past 3 months" active (class="on")')
+  : bad('segmented bar default "on" button is not Past 3 months');
+has(html, '<select id="pmonth"', 'month-only <select> is present');
+has(html, '<option value="" selected>Month', 'month select defaults to the neutral "Month…" placeholder');
 for (const m of [...new Set([...data.meta.months_cpu.slice(-2), ...data.meta.months_gpu.slice(-2)])])
-  has(html, '<option value="' + m + '"', 'period selector lists month ' + m);
+  has(html, '<option value="' + m + '"', 'month select lists month ' + m);
+has(html, '<span class="prangetext" id="prange">', 'resolved-range text element is present');
+{
+  const expected = rangeTextJS(data.meta.window3);
+  const got = (html.match(/id="prange">([^<]*)</) || ['', '(absent)'])[1];
+  got === expected
+    ? ok('range text matches window3 initially ("' + expected + '")')
+    : bad('range text is "' + got + '", expected "' + expected + '" (window3)');
+}
 
 // ---- 6. two KPI totals cards with the portals' tile labels, GPU left / CPU right ----
 const sliceFrom = (startMarker, endMarkers) => {
@@ -147,19 +169,30 @@ has(cpuCard, (wCpu.held ? Math.round(100 * wCpu.utilized / wCpu.held) : 0) + '%'
 has(gpuCard, fmth(wGpu.held), 'GPU totals: Held GPU-h matches the recomputed window3 total');
 has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'GPU totals: Avg Utilization % matches recomputed window3');
 
-// ---- 7. functional: execute the page's inline JS and simulate a period change,
-// verifying the KPI cards recompute correctly for a non-default window ----
+// ---- 7. functional: execute the page's inline JS and simulate period-control
+// interactions, verifying the KPI cards AND the range text recompute correctly ----
 {
   const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n;\n');
-  const handlers = { change: [] };
-  const makeEl = (id) => ({
-    id, value: '', innerHTML: '', dataset: {}, style: {},
-    addEventListener(ev, fn) { if (ev === 'change' && id === 'period') handlers.change.push(fn); },
+  const handlers = { 'seg-p3': [], 'seg-p6': [], 'seg-all': [], pmonth: [] };
+  const makeEl = (id, extra = {}) => ({
+    id, value: '', innerHTML: '', textContent: '', dataset: {}, style: {},
+    addEventListener(ev, fn) {
+      if (id in handlers && ((id === 'pmonth' && ev === 'change') || (id !== 'pmonth' && ev === 'click'))) handlers[id].push(fn);
+    },
     appendChild() {}, setAttribute() {},
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     querySelectorAll: () => [], closest: () => null,
+    ...extra,
   });
-  const els = { '#period': makeEl('period'), '#kpi-cpu': makeEl('kpi-cpu'), '#kpi-gpu': makeEl('kpi-gpu') };
+  const els = {
+    '#seg-p3': makeEl('seg-p3', { dataset: { w: 'past3' } }),
+    '#seg-p6': makeEl('seg-p6', { dataset: { w: 'past6' } }),
+    '#seg-all': makeEl('seg-all', { dataset: { w: 'all' } }),
+    '#pmonth': makeEl('pmonth'),
+    '#kpi-cpu': makeEl('kpi-cpu'),
+    '#kpi-gpu': makeEl('kpi-gpu'),
+    '#prange': makeEl('prange'),
+  };
   const document = {
     querySelector: (sel) => els[sel] || makeEl(sel.replace(/^[.#]/, '')),
     querySelectorAll: () => [],
@@ -171,17 +204,35 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
   const window = { addEventListener: () => {}, matchMedia: () => ({ matches: false, addEventListener() {} }) };
   const localStorage = { getItem: () => null, setItem() {} };
   try {
-    new Function('document', 'window', 'localStorage', scripts)(document, window, localStorage);
     if (!scripts.trim()) throw new Error('no <script> content found');
-    els['#period'].value = 'all';
-    if (handlers.change.length) handlers.change.forEach(fn => fn({ target: els['#period'] }));
-    else bad('functional: the #period change handler was never registered');
+    new Function('document', 'window', 'localStorage', scripts)(document, window, localStorage);
+
+    // click "All months": both cards and the range text should update together
+    if (handlers['seg-all'].length) handlers['seg-all'].forEach(fn => fn({ target: els['#seg-all'] }));
+    else bad('functional: the "All months" segment click handler was never registered');
     const wCpuAll = sumWindow(data.cpu_monthly, data.meta.months_cpu, CPU_FIELDS);
     const wGpuAll = sumWindow(data.gpu_monthly, data.meta.months_gpu, GPU_FIELDS);
-    has(els['#kpi-cpu'].innerHTML, fmth(wCpuAll.held), 'functional: selecting "All months" recomputes CPU Held core-h correctly');
-    has(els['#kpi-gpu'].innerHTML, fmth(wGpuAll.held), 'functional: selecting "All months" recomputes GPU Held GPU-h correctly');
+    has(els['#kpi-cpu'].innerHTML, fmth(wCpuAll.held), 'functional: clicking "All months" recomputes CPU Held core-h correctly');
+    has(els['#kpi-gpu'].innerHTML, fmth(wGpuAll.held), 'functional: clicking "All months" recomputes GPU Held GPU-h correctly');
+    const allUnion = [...new Set([...data.meta.months_cpu, ...data.meta.months_gpu])].sort();
+    const expectAllRange = rangeTextJS(allUnion);
+    els['#prange'].textContent === expectAllRange
+      ? ok('functional: clicking "All months" updates the range text correctly ("' + expectAllRange + '")')
+      : bad('functional: range text after "All months" is "' + els['#prange'].textContent + '", expected "' + expectAllRange + '"');
+
+    // pick a single month: cards + range text should recompute to that one month
+    const singleMonth = data.meta.months_cpu[data.meta.months_cpu.length - 1];
+    els['#pmonth'].value = singleMonth;
+    if (handlers.pmonth.length) handlers.pmonth.forEach(fn => fn({ target: els['#pmonth'] }));
+    else bad('functional: the month-select change handler was never registered');
+    const wCpuMonth = sumWindow(data.cpu_monthly, [singleMonth], CPU_FIELDS);
+    has(els['#kpi-cpu'].innerHTML, fmth(wCpuMonth.held), 'functional: selecting a single month recomputes CPU Held core-h correctly');
+    const expectMonthRange = rangeTextJS([singleMonth]);
+    els['#prange'].textContent === expectMonthRange
+      ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
+      : bad('functional: range text after a single-month pick is "' + els['#prange'].textContent + '", expected "' + expectMonthRange + '"');
   } catch (e) {
-    bad('functional: page JS threw during simulated period change -- ' + (e && e.message ? e.message : e));
+    bad('functional: page JS threw during simulated period-control interaction -- ' + (e && e.message ? e.message : e));
   }
 }
 
@@ -207,9 +258,9 @@ has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(4,1fr)', 'KPI ca
 has(styleBlock, '.hwlbl{flex:0 0 110px', 'hardware label column is narrowed to 110px (the long names live in the tooltip, not this column)');
 has(styleBlock, '.pool-gpu h3,#gpucard h3{border-color:#baf72e', 'GPU panel + totals titles carry the chartreuse pool-accent rule line');
 has(styleBlock, '.pool-cpu h3,#cpucard h3{border-color:#4cc9db', 'CPU panel + totals titles carry the cyan pool-accent rule line');
-has(styleBlock, '#periodctl{padding:8px 13px', 'the period control is a slim strip, not a full-height deck');
-has(styleBlock, '#periodctl .row{justify-content:center', 'the period control row is centered');
 not(styleBlock, 'h2{', 'the unused h2 rule was removed (dead CSS -- no <h2> in the markup)');
+has(styleBlock, '.periodbar{display:flex;align-items:center;justify-content:center', 'the period bar is a chrome-less, centered row (not a full deck)');
+not(styleBlock, '#periodctl', 'the old #periodctl deck rules were removed (replaced by the chrome-less .periodbar)');
 
 // ---- 11. asymmetric pool split (maintainer round 2): CPU container wider so
 // the 6-cluster E5 row renders on one line, panel heights come closer ----

@@ -68,6 +68,17 @@ model_label <- function(x) {
 MON <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 month_label <- function(m) paste0(MON[as.integer(substr(m, 6, 7))], " ", substr(m, 1, 4))
 
+# resolved-range text under the period controls, e.g. "· May – Jul 2026" (year
+# shown once when both ends share a year) or "· Jul 2026" for a single month.
+# Mirrors the page's own JS rangeText() so the SSR default and a JS recompute agree.
+range_text <- function(months) {
+  if (!length(months)) return("")
+  a <- months[1]; b <- months[length(months)]
+  if (a == b) return(paste0("· ", month_label(a)))
+  a_lbl <- if (substr(a, 1, 4) == substr(b, 1, 4)) MON[as.integer(substr(a, 6, 7))] else month_label(a)
+  paste0("· ", a_lbl, " – ", month_label(b))
+}
+
 # ---- pool panels: one hardware row per capacity.types[] entry. No live data
 # exists for this page (capacity, not occupancy) -- every block renders
 # saturated. Node clusters are built purely from count x per_node; tooltips
@@ -178,17 +189,15 @@ gpu_kpi_html <- function(T) {
 window3 <- d$meta$window3
 default_cpu_kpi <- cpu_kpi_html(sum_cpu_window(window3))
 default_gpu_kpi <- gpu_kpi_html(sum_gpu_window(window3))
+default_range <- range_text(window3)
 
-# ---- period selector options: month grain only -- every published month
-# (CPU+GPU union) plus the three named windows; default = Past 3 months. ----
+# ---- period controls: a segmented [Past 3 | Past 6 | All] bar (default:
+# Past 3 months, "on") plus a compact month-only <select> for single-month
+# views (neutral "Month…" placeholder, month grain, every published month
+# across CPU+GPU union). ----
 all_months <- sort(unique(c(d$meta$months_cpu, d$meta$months_gpu)))
 month_opts <- paste(vapply(rev(all_months), function(m) sprintf('<option value="%s">%s</option>', m, month_label(m)), character(1)), collapse = "")
-period_options <- paste0(
-  '<option value="past3" selected>Past 3 months</option>',
-  '<option value="past6">Past 6 months</option>',
-  '<option value="all">All months</option>',
-  month_opts
-)
+month_select_options <- paste0('<option value="" selected>Month…</option>', month_opts)
 
 # ---- assemble ----------------------------------------------------------------
 html <- paste0(
@@ -222,10 +231,10 @@ h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .deckrow{display:flex;gap:16px;align-items:stretch;margin-bottom:12px;}.deckrow .deck{flex:1 1 auto;margin-bottom:0;min-width:0;}
 #gpupanel,#gpucard{flex:0 1 40%;}#cpupanel,#cpucard{flex:1 1 0;}
 @media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.kpi{grid-template-columns:repeat(2,1fr);}}
-.row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;}.row .grp{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}
-label{font-size:0.75rem;font-weight:600;color:var(--muted);margin-right:6px;text-transform:uppercase;letter-spacing:.04em;}
-select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);}#period{font-variant-numeric:tabular-nums;}
-#periodctl{padding:8px 13px;}#periodctl .row{justify-content:center;align-items:center;}#periodctl .grp{flex-direction:row;align-items:center;gap:8px;}
+select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);}#pmonth{font-variant-numeric:tabular-nums;}
+.periodbar{display:flex;align-items:center;justify-content:center;gap:8px;margin:4px 0 10px;}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;}.seg button{border:none;border-right:1px solid var(--border);background:var(--surface);font:inherit;font-size:0.75rem;padding:4px 10px;cursor:pointer;color:var(--text);border-radius:0;}.seg button:last-child{border-right:none;}.seg button:hover{background:var(--surface2);}.seg button.on{background:var(--used);color:#fff;}
+.prangetext{color:var(--muted);font-size:0.75rem;white-space:nowrap;}
 .hwcols,.hwrow{display:flex;align-items:center;gap:14px;}.hwcols{font-size:0.75rem;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:2px;}.hwcols span{color:var(--ink);font-weight:bold;}
 .hwrow{padding:5px 0;border-bottom:1px solid var(--grid);}.hwrow:last-child{border-bottom:none;padding-bottom:0;}
 .hwlbl{flex:0 0 110px;color:var(--text);white-space:nowrap;}.hwc{flex:0 0 64px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
@@ -253,10 +262,14 @@ r"-----(</div>
 cpu_panel,
 r"-----(</div>
 </div>
-<div class="deck" id="periodctl">
-<div class="row"><div class="grp"><label for="period">Period</label><select id="period">)-----",
-period_options,
-r"-----(</select></div></div>
+<div class="periodbar" id="periodbar">
+<span class="seg"><button id="seg-p3" class="on" data-w="past3">Past 3 months</button><button id="seg-p6" data-w="past6">Past 6 months</button><button id="seg-all" data-w="all">All months</button></span>
+<select id="pmonth">)-----",
+month_select_options,
+r"-----(</select>
+<span class="prangetext" id="prange">)-----",
+default_range,
+r"-----(</span>
 </div>
 <div class="deckrow">
 <div class="deck" id="gpucard"><h3>GPU Totals</h3><div class="kpi" id="kpi-gpu">)-----",
@@ -338,12 +351,36 @@ function gpuKpiHtml(T){
     +kpi((T.held?Math.round(100*T.wkill_h/T.held):0)+'%','on wall-killed jobs',GPU_TIPS.wkill)
     +kpi((T.held?Math.round(100*T.vram_h/T.held):0)+'%','Mean VRAM',GPU_TIPS.vram);
 }
-function renderKpis(){
-  const months=windowFor($('#period').value);
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthLabel(m,withYear){return MON[+m.slice(5,7)-1]+(withYear?' '+m.slice(0,4):'');}
+function rangeText(months){
+  if(!months.length)return '';
+  const a=months[0],b=months[months.length-1];
+  if(a===b)return '· '+monthLabel(a,true);
+  const sameYear=a.slice(0,4)===b.slice(0,4);
+  return '· '+monthLabel(a,!sameYear)+' – '+monthLabel(b,true);
+}
+function applyWindow(months){
   $('#kpi-cpu').innerHTML=cpuKpiHtml(sumCpu(months));
   $('#kpi-gpu').innerHTML=gpuKpiHtml(sumGpu(months));
+  $('#prange').textContent=rangeText(months);
 }
-$('#period').addEventListener('change',renderKpis);
+const SEGS=[['#seg-p3','past3'],['#seg-p6','past6'],['#seg-all','all']];
+SEGS.forEach(([sel])=>{
+  const b=$(sel);
+  b.addEventListener('click',()=>{
+    SEGS.forEach(([s])=>$(s).classList.remove('on'));
+    b.classList.add('on');
+    $('#pmonth').value='';
+    applyWindow(windowFor(b.dataset.w));
+  });
+});
+$('#pmonth').addEventListener('change',()=>{
+  const v=$('#pmonth').value;
+  if(!v)return;
+  SEGS.forEach(([s])=>$(s).classList.remove('on'));
+  applyWindow(windowFor(v));
+});
 const tipEl=document.createElement('div');tipEl.id='tip';
 function posTip(x,y){const w=tipEl.offsetWidth,h=tipEl.offsetHeight;let L=x+14,T=y+16;if(L+w>innerWidth-8)L=Math.max(8,x-w-14);if(T+h>innerHeight-8)T=Math.max(8,y-h-16);tipEl.style.left=L+'px';tipEl.style.top=T+'px';}
 function showTip(html,x,y){if(!html){tipEl.style.display='none';return;}tipEl.innerHTML=html;tipEl.style.display='block';posTip(x,y);}
