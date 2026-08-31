@@ -131,9 +131,13 @@ if (data) {
   const cpuSum = sumWindow(data.cpu_monthly);
   const gpuSum = sumWindow(data.gpu_monthly);
   const h = data.headline || {};
-  if (Math.abs(cpuSum.held - Number(h.cpu_core_h)) > TOL)
+  // Number.isFinite guard first: Number(NaN-ish) > TOL is false, so an unguarded
+  // Math.abs(...) > TOL would silently pass a non-numeric headline value instead
+  // of flagging it (matches the finite check monthlyCheck already does above).
+  const closeEnough = (recomputed, val) => Number.isFinite(Number(val)) && Math.abs(recomputed - Number(val)) <= TOL;
+  if (!closeEnough(cpuSum.held, h.cpu_core_h))
     bad(`conservation: cpu_core_h: recomputed ${cpuSum.held} != headline ${h.cpu_core_h}`);
-  if (Math.abs(gpuSum.held - Number(h.gpu_h)) > TOL)
+  if (!closeEnough(gpuSum.held, h.gpu_h))
     bad(`conservation: gpu_h: recomputed ${gpuSum.held} != headline ${h.gpu_h}`);
   if (cpuSum.njobs + gpuSum.njobs !== Number(h.jobs))
     bad(`conservation: jobs: recomputed ${cpuSum.njobs + gpuSum.njobs} != headline ${h.jobs}`);

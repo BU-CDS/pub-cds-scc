@@ -75,6 +75,9 @@ assert(run(bad) === 1, 'broken conservation sum fails'); pass('broken conservati
 bad = clone(goodData); bad.headline.jobs = 1;
 assert(run(bad) === 1, 'broken conservation sum (jobs) fails'); pass('broken conservation sum (jobs) fails');
 
+bad = clone(goodData); bad.headline.cpu_core_h = 'not-a-number';
+assert(run(bad) === 1, 'non-numeric conservation value fails'); pass('non-numeric headline.cpu_core_h fails (not silently NaN-passed)');
+
 bad = clone(goodData); bad.cpu_monthly[0][1] = 'gpuheavy';
 assert(run(bad) === 1, 'unknown node_class fails'); pass('unknown node_class fails');
 
