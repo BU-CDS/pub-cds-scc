@@ -60,7 +60,7 @@ esc_a <- function(s) { s <- gsub("&", "&amp;", s, fixed = TRUE); s <- gsub("\"",
 model_label <- function(x) {
   x <- sub("^(Gold|Silver|Platinum|Bronze)-", "\\1 ", x)
   x <- sub("^EPYC-", "AMD EPYC ", x)
-  x <- sub("(\\d)v(\\d)$", "\\1 v\\2", x)
+  x <- sub("(\\d)v(\\d)$", "\\1\u00a0v\\2", x)   # non-breaking space so "v3" never orphans onto its own line in the narrowed .hwlbl column
   xeon <- grepl("^(E\\d|Gold|Silver|Platinum|Bronze|W)", x) | grepl("^\\d{4}[A-Za-z]?$", x)
   ifelse(xeon, paste0("Xeon ", x), x)
 }
@@ -220,6 +220,7 @@ h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .pool-gpu h3,#gpucard h3{border-color:#baf72e;}
 .pool-cpu h3,#cpucard h3{border-color:#4cc9db;}
 .deckrow{display:flex;gap:16px;align-items:stretch;margin-bottom:12px;}.deckrow .deck{flex:1 1 auto;margin-bottom:0;min-width:0;}
+#gpupanel,#gpucard{flex:0 1 40%;}#cpupanel,#cpucard{flex:1 1 0;}
 @media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.kpi{grid-template-columns:repeat(2,1fr);}}
 .row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;}.row .grp{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}
 label{font-size:0.75rem;font-weight:600;color:var(--muted);margin-right:6px;text-transform:uppercase;letter-spacing:.04em;}
@@ -227,11 +228,11 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 #periodctl{padding:8px 13px;}#periodctl .row{justify-content:center;align-items:center;}#periodctl .grp{flex-direction:row;align-items:center;gap:8px;}
 .hwcols,.hwrow{display:flex;align-items:center;gap:14px;}.hwcols{font-size:0.75rem;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:2px;}.hwcols span{color:var(--ink);font-weight:bold;}
 .hwrow{padding:5px 0;border-bottom:1px solid var(--grid);}.hwrow:last-child{border-bottom:none;padding-bottom:0;}
-.hwlbl{flex:0 0 110px;color:var(--text);}.hwc{flex:0 0 64px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.hwlbl{flex:0 0 110px;color:var(--text);white-space:nowrap;}.hwc{flex:0 0 64px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.pool-cpu .hwlbl{flex:0 0 130px;}
 .hwnodes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
-.pool-cpu{--core-s:clamp(7px,0.62vw,12px);}.pool-cpu .cnode{display:grid;grid-template-columns:repeat(8,var(--core-s));gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-cpu .cnode i{width:var(--core-s);height:var(--core-s);border-radius:3px;display:block;background:var(--idle);}.pool-cpu .cnode i.on{background:var(--used);}
-.pool-cpu .hwnodes{display:grid;grid-template-columns:repeat(3,max-content);gap:8px;justify-content:start;}
-.pool-gpu{--gpu-w:clamp(16px,1.95vw,40px);--gpu-h:clamp(12px,0.95vw,20px);}.pool-gpu .cnode{display:inline-flex;gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-gpu .cnode i{width:var(--gpu-w);height:var(--gpu-h);border-radius:4px;display:block;background:var(--idle);}.pool-gpu .cnode i.on{background:var(--used);}
+.pool-cpu{--core-s:clamp(5px,0.38vw,12px);}.pool-cpu .cnode{display:grid;grid-template-columns:repeat(8,var(--core-s));gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-cpu .cnode i{width:var(--core-s);height:var(--core-s);border-radius:3px;display:block;background:var(--idle);}.pool-cpu .cnode i.on{background:var(--used);}
+.pool-gpu{--gpu-w:clamp(13px,0.93vw,40px);--gpu-h:clamp(10px,0.47vw,20px);}.pool-gpu .cnode{display:inline-flex;gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-gpu .cnode i{width:var(--gpu-w);height:var(--gpu-h);border-radius:4px;display:block;background:var(--idle);}.pool-gpu .cnode i.on{background:var(--used);}
 [data-tip]{cursor:help;}
 #tip{position:fixed;z-index:99;max-width:300px;background:#0f1f3a;color:#eaf1fb;font-size:0.719rem;line-height:1.45;padding:7px 10px;border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,.28);pointer-events:none;display:none;}#tip b{color:#9ec5ff;font-weight:600;}
 .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 18px;margin:0;}.kpi .k{padding:0;}

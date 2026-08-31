@@ -204,16 +204,26 @@ has(html, '<meta name="viewport"', 'viewport meta present');
 const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
 has(styleBlock, '.deck h3{', 'deck titles (GPU/CPU Pool, GPU/CPU Totals) get their own h3 rule');
 has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(4,1fr)', 'KPI cards use a 4-column grid so both cards align tile-for-tile');
-/--gpu-w:clamp\(16px,1\.95vw,40px\)/.test(styleBlock)
-  ? ok('GPU block width is fitted to the twin-panel layout (clamped to a 40px max, not the full-width-portal 64px)')
-  : bad('GPU block width (--gpu-w) is not clamped to the fitted 16-40px range');
 has(styleBlock, '.hwlbl{flex:0 0 110px', 'hardware label column is narrowed to 110px (the long names live in the tooltip, not this column)');
 has(styleBlock, '.pool-gpu h3,#gpucard h3{border-color:#baf72e', 'GPU panel + totals titles carry the chartreuse pool-accent rule line');
 has(styleBlock, '.pool-cpu h3,#cpucard h3{border-color:#4cc9db', 'CPU panel + totals titles carry the cyan pool-accent rule line');
-has(styleBlock, '.pool-cpu .hwnodes{display:grid;grid-template-columns:repeat(3,max-content)', 'CPU node clusters lay out on a fixed 3-column grid (clean 3+3 rows, no arbitrary wrap)');
 has(styleBlock, '#periodctl{padding:8px 13px', 'the period control is a slim strip, not a full-height deck');
 has(styleBlock, '#periodctl .row{justify-content:center', 'the period control row is centered');
 not(styleBlock, 'h2{', 'the unused h2 rule was removed (dead CSS -- no <h2> in the markup)');
+
+// ---- 11. asymmetric pool split (maintainer round 2): CPU container wider so
+// the 6-cluster E5 row renders on one line, panel heights come closer ----
+has(styleBlock, '#gpupanel,#gpucard{flex:0 1 40%', 'GPU panel + totals card take the narrower 40% flex share');
+has(styleBlock, '#cpupanel,#cpucard{flex:1 1 0', 'CPU panel + totals card take the wider (~60%) flex share');
+has(styleBlock, '.hwlbl{flex:0 0 110px;color:var(--text);white-space:nowrap', 'hardware labels never wrap mid-name (.hwlbl gets white-space:nowrap)');
+has(styleBlock, '.pool-cpu .hwlbl{flex:0 0 130px', 'CPU label column is widened to 130px (fits "Xeon E5-2660\\u00a0v3" without overflow)');
+not(styleBlock, '.pool-cpu .hwnodes{display:grid', 'CPU node grid override was dropped -- back to flex-wrap now that the wider 60% column fits the E5 row on one line');
+/--core-s:clamp\(5px,0\.38vw,12px\)/.test(styleBlock)
+  ? ok('CPU core-square size is retuned to fit six clusters on one line in the narrower 60% column')
+  : bad('--core-s is not retuned to the fitted clamp(5px,0.38vw,12px)');
+/--gpu-w:clamp\(13px,0\.93vw,40px\)/.test(styleBlock)
+  ? ok('GPU block width is retuned down (40% column is narrower than the old 50/50 half)')
+  : bad('--gpu-w is not retuned to the fitted clamp(13px,0.93vw,40px)');
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
