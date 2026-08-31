@@ -216,7 +216,9 @@ main{max-width:min(var(--content-max),96vw);margin:0 auto;padding:14px var(--con
 h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .deck{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 13px;margin-bottom:12px;box-shadow:0 1px 3px var(--shadow);}
 .deck h3{font-size:0.8rem;font-weight:700;color:var(--ink);margin:0 0 8px;}
-.pool-gpu h3,.pool-cpu h3{border-bottom:1px solid var(--rule);padding-bottom:6px;margin-bottom:10px;}
+.pool-gpu h3,.pool-cpu h3,#gpucard h3,#cpucard h3{border-bottom:3px solid;padding-bottom:6px;margin-bottom:10px;}
+.pool-gpu h3,#gpucard h3{border-color:#baf72e;}
+.pool-cpu h3,#cpucard h3{border-color:#4cc9db;}
 .deckrow{display:flex;gap:16px;align-items:stretch;margin-bottom:12px;}.deckrow .deck{flex:1 1 auto;margin-bottom:0;min-width:0;}
 @media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.kpi{grid-template-columns:repeat(2,1fr);}}
 .row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;}.row .grp{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}

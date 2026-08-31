@@ -208,7 +208,8 @@ has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(4,1fr)', 'KPI ca
   ? ok('GPU block width is fitted to the twin-panel layout (clamped to a 40px max, not the full-width-portal 64px)')
   : bad('GPU block width (--gpu-w) is not clamped to the fitted 16-40px range');
 has(styleBlock, '.hwlbl{flex:0 0 110px', 'hardware label column is narrowed to 110px (the long names live in the tooltip, not this column)');
-has(styleBlock, '.pool-gpu h3,.pool-cpu h3{border-bottom:1px solid var(--rule)', 'pool-panel titles carry a rule line underneath (read as headers)');
+has(styleBlock, '.pool-gpu h3,#gpucard h3{border-color:#baf72e', 'GPU panel + totals titles carry the chartreuse pool-accent rule line');
+has(styleBlock, '.pool-cpu h3,#cpucard h3{border-color:#4cc9db', 'CPU panel + totals titles carry the cyan pool-accent rule line');
 has(styleBlock, '.pool-cpu .hwnodes{display:grid;grid-template-columns:repeat(3,max-content)', 'CPU node clusters lay out on a fixed 3-column grid (clean 3+3 rows, no arbitrary wrap)');
 has(styleBlock, '#periodctl{padding:8px 13px', 'the period control is a slim strip, not a full-height deck');
 has(styleBlock, '#periodctl .row{justify-content:center', 'the period control row is centered');
