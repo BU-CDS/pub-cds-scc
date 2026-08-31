@@ -263,7 +263,7 @@ r"-----(</div></div>
 </main>
 <footer class="pagefoot"><img class="ft-emblem" src=")-----",
 emblem_uri,
-r"-----(" alt="Boston University Faculty of Computing &amp; Data Sciences"><span class="ft-text">Data from SGE accounting and gpustats · updated monthly · )-----",
+r"-----(" alt="Boston University Faculty of Computing &amp; Data Sciences"><span class="ft-text">Data from SGE accounting and gpustats · updated quarterly · )-----",
 d$meta$updated,
 r"-----(</span></footer>
 <script>

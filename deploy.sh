@@ -11,17 +11,22 @@ REPO="$(git -C "$ROOT" rev-parse --show-toplevel)"
 PAGE="$ROOT/index.html"
 [ -f "$PAGE" ] || { echo "deploy: no index.html to publish"; exit 1; }
 
-# zero-JS guard: the built page is a static showcase, never JS. Unconditional:
-# no env var bypasses it.
-if grep -q '<script' "$PAGE"; then
-  echo "deploy: REFUSED -- page contains <script>. This page must stay zero-JS." >&2
-  exit 1
-fi
+# script guard: the zero-JS rule is dead (spec Revision R1) -- the page now
+# legitimately ships one inline <script> for period switching + KPI recompute.
+# What is still refused, unconditionally (no env var bypasses it): anything
+# that would make the script reach outside the page -- an external request,
+# browser storage, or an externally-sourced <script src=>.
+for needle in 'fetch(' 'XMLHttpRequest' 'localStorage' 'document.cookie' '<script src='; do
+  if grep -qF -- "$needle" "$PAGE"; then
+    echo "deploy: REFUSED -- page contains '$needle'. Inline scripts are fine; external calls/storage/sourced scripts are not." >&2
+    exit 1
+  fi
+done
 
-# ...and require the "updated monthly" stamp: a page built from a broken
+# ...and require the "updated quarterly" stamp: a page built from a broken
 # template (or a stray fragment) that carries neither must not publish.
-if ! grep -q 'updated monthly' "$PAGE"; then
-  echo "deploy: REFUSED -- page lacks the 'updated monthly' stamp. Rebuild with build_cluster_page.R." >&2
+if ! grep -q 'updated quarterly' "$PAGE"; then
+  echo "deploy: REFUSED -- page lacks the 'updated quarterly' stamp. Rebuild with build_cluster_page.R." >&2
   exit 1
 fi
 

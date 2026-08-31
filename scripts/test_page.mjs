@@ -96,9 +96,10 @@ has(head1, 'Faculty of Computing &amp; Data Sciences', 'h1 carries the school na
 // ---- 4. no LIVE/STALE machinery (this is capacity, not a live occupancy feed) ----
 for (const needle of ['livebadge', 'stalebadge', 'livedot', 'LIVE</span>', '>STALE<'])
   not(html, needle, 'no "' + needle + '" (capacity panels carry no live/stale badge)');
-// the footer's "updated monthly" stamp is unchanged from Task 3 (spec: "Footer unchanged")
-// and deploy.sh still greps for it verbatim -- must still be present, not forbidden.
-has(html, 'updated monthly', 'footer keeps the "updated monthly" stamp deploy.sh checks for');
+// the footer's stamp wording moves monthly -> quarterly per spec Revision R1
+// (cadence: quarterly); deploy.sh's stamp grep is updated to match -- must
+// still be present, not forbidden.
+has(html, 'updated quarterly', 'footer keeps the "updated quarterly" stamp deploy.sh checks for');
 
 // ---- 5. period selector: present, month-grain, default = trailing 3 complete months ----
 has(html, '<select id="period"', 'period <select> is present');

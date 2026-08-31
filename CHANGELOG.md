@@ -85,3 +85,21 @@ All notable changes to the public cluster page.
   embedded script and confirms a period change recomputes both cards correctly)
   and run through `gate_cluster.mjs` with the built page (exit 0). `index.html`
   is 231 KB, dominated by the embedded assets.
+
+- **Ops: quarterly cadence + deploy guard for the scripted page** (2026-08-31,
+  `deploy.sh`, `scripts/test_deploy.sh`, `build_cluster_page.R`,
+  `scripts/test_page.mjs`; spec Revision R1): the footer stamp moves
+  `updated monthly` -> `updated quarterly` to match the new quarterly refresh
+  cadence, and `deploy.sh`'s zero-JS guard -- dead now that the page carries a
+  real inline `<script>` (Task 8) -- is replaced with a guard that admits
+  inline scripts but refuses anything reaching outside the page: an
+  `index.html` containing `fetch(`, `XMLHttpRequest`, `localStorage`,
+  `document.cookie`, or an externally-sourced `<script src=` is refused, and
+  the stamp check now requires `updated quarterly` (both unconditional, no
+  env var bypasses them). Lifecycle-tested in throwaway repos under
+  `mktemp -d` (12 assertions): the old `<script>`-refusal scenario becomes an
+  inline-script-ACCEPTED scenario, plus a new `fetch(`-refusal scenario, plus
+  the existing stamp/worktree-lifecycle coverage updated to the new wording.
+  Rebuilt and re-verified: `test_page.mjs` (59 assertions, including the
+  footer's `updated quarterly` stamp) and `validate.mjs` green, and the full
+  staged pipeline (`DEPLOY_PUSH=0 ./refresh_public.sh`) green end to end.
