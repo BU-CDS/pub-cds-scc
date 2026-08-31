@@ -60,6 +60,12 @@ window6 <- tail(intersect(months_cpu, months_gpu), 6)   # trailing months common
 
 tomat  <- function(m, cols) { x <- as.data.table(m); setnames(x, cols); x }
 numify <- function(x, cc) { for (col in cc) x[, (col) := as.numeric(get(col))]; x }
+# Row-wise list, not as.matrix(): a data.table mixing character and numeric columns
+# would have as.matrix() coerce every column to character (and pad-quote the numbers),
+# so held_h/njobs/count/per_node/per_node_ram_gb must serialize as JSON numbers, not
+# strings. Each row becomes an unnamed list; auto_unbox turns its length-1 elements
+# into bare scalars, so toJSON renders one mixed-type JSON array per row.
+to_rows <- function(dt) unname(lapply(seq_len(nrow(dt)), function(i) unname(as.list(dt[i]))))
 
 Fc <- numify(tomat(cpu$F, cpu$Fcols), c("held", "njobs"))[pt == "M" & p %chin% months_cpu]
 Fg <- numify(tomat(gpu$F, gpu$Fcols), c("held", "njobs"))[pt == "M" & p %chin% months_gpu]
@@ -87,11 +93,11 @@ capacity <- list(
   cpu = list(nodes = nrow(cpu_inv),
              cores = sum(as.integer(cpu_inv$ncpu)),
              ram_gb = round(sum(as.numeric(cpu_inv$mem_gb)), 1),
-             types = unname(as.matrix(cpu_types[, .(label, server, count, per_node, per_node_ram_gb)]))),
+             types = to_rows(cpu_types[, .(label, server, count, per_node, per_node_ram_gb)])),
   gpu = list(nodes = nrow(gpu_inv),
              gpus = sum(as.integer(gpu_inv$gpus)),
              vram_gb = round(sum(as.integer(gpu_inv$gpus) * as.numeric(gpu_inv$gpu_mem_gb)), 1),
-             types = unname(as.matrix(gpu_types[, .(label, server, count, per_node, per_node_ram_gb)])))
+             types = to_rows(gpu_types[, .(label, server, count, per_node, per_node_ram_gb)]))
 )
 
 headline <- list(
@@ -104,8 +110,8 @@ meta <- list(updated = format(Sys.Date(), "%Y-%m-%d"), public = TRUE,
              months_cpu = I(months_cpu), months_gpu = I(months_gpu), window6 = I(window6))
 
 out <- list(meta = meta, capacity = capacity,
-            cpu_monthly = unname(as.matrix(cpu_m)),
-            gpu_monthly = unname(as.matrix(gpu_m)),
+            cpu_monthly = to_rows(cpu_m),
+            gpu_monthly = to_rows(gpu_m),
             headline = headline)
 
 .outf <- file.path(OUTPUT_DIR, "cluster_data.json")

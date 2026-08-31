@@ -136,6 +136,24 @@ outf <- file.path(f1$fx, "output", "cluster_data.json")
 stopifnot("output/cluster_data.json must be written" = file.exists(outf))
 out <- fromJSON(outf, simplifyVector = TRUE, simplifyMatrix = TRUE)
 
+# numeric fields must be real JSON numbers, not quoted strings. simplifyVector = FALSE
+# preserves each JSON scalar's actual parsed type, so a string like "50" reads back as
+# is.character() here even though as.numeric("50") == 50 would hide the same defect in
+# every other assertion in this file that goes through the simplified `out` above.
+raw <- fromJSON(outf, simplifyVector = FALSE)
+row_types_ok <- function(row, n_char) {
+  n <- length(row)
+  all(vapply(row[seq_len(n_char)], is.character, logical(1))) &&
+    all(vapply(row[seq_len(n - n_char) + n_char], is.numeric, logical(1)))
+}
+stopifnot("cpu_monthly rows must be [char,char,num,num], not all-string" = row_types_ok(raw$cpu_monthly[[1]], 2))
+stopifnot("gpu_monthly rows must be [char,char,num,num], not all-string" = row_types_ok(raw$gpu_monthly[[1]], 2))
+stopifnot("capacity.cpu.types rows must be [char,char,num,num,num], not all-string" =
+  row_types_ok(raw$capacity$cpu$types[[1]], 2))
+stopifnot("capacity.gpu.types rows must be [char,char,num,num,num], not all-string" =
+  row_types_ok(raw$capacity$gpu$types[[1]], 2))
+pass("cpu_monthly/gpu_monthly/capacity.types numeric fields are real JSON numbers, not strings")
+
 # months exclude the current month
 stopifnot("cur must not appear in months_cpu" = !(cur %in% out$meta$months_cpu))
 stopifnot("cur must not appear in months_gpu" = !(cur %in% out$meta$months_gpu))
