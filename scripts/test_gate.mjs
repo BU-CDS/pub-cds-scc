@@ -1,4 +1,12 @@
 // test_gate.mjs — fixture test for gate_cluster.mjs.
+//
+// Contract v2 (spec Revision R1): cpu_monthly rows widen to
+// [month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h];
+// gpu_monthly rows widen to
+// [month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs];
+// meta.window3 (trailing <=3 complete months common to both pools) replaces
+// window6; conservation recomputes held_h/njobs over window3.
+//
 // Run: module load nodejs/20.12.2 && node scripts/test_gate.mjs
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -26,21 +34,31 @@ writeFileSync(join(gpuDir, 'config', 'gpu_inventory_history.csv'),
 writeFileSync(join(gpuDir, 'config', 'cds_gpu_hosts.csv'),
   'host,gpu_type,gpus,gpu_mem_gb\nscc-gfix1,H200,2,144\n');
 
-// ---- a clean cluster_data.json fixture, shaped like the real Task-1 output --
+// ---- a clean cluster_data.json fixture, shaped like the real Task-7 (v2) output --
+// cpu_monthly row: [month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h]
+// gpu_monthly row: [month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs]
 const goodData = {
   meta: { updated: '2026-08-31', public: true,
           months_cpu: ['2026-06', '2026-07'], months_gpu: ['2026-06', '2026-07'],
-          window6: ['2026-06', '2026-07'] },
+          window3: ['2026-06', '2026-07'] },
   capacity: {
     cpu: { nodes: 2, cores: 52, ram_gb: 1258,
            types: [['Gold-6326', 'PowerEdge R650', 1, 32, 1007], ['E5-2660v3', 'PowerEdge C6320', 1, 20, 251]] },
     gpu: { nodes: 1, gpus: 2, vram_gb: 288,
            types: [['H200', 'PowerEdge R770', 1, 2, 144]] },
   },
-  cpu_monthly: [['2026-06', 'standard', 100, 10], ['2026-06', 'm1024', 50, 5],
-                ['2026-07', 'standard', 110, 11], ['2026-07', 'm1024', 60, 6]],
-  gpu_monthly: [['2026-06', 'H200', 200, 20], ['2026-07', 'H200', 210, 21]],
-  headline: { cpu_core_h: 320, gpu_h: 410, jobs: 73 },   // 100+50+110+60=320; 200+210=410; 10+5+11+6+20+21=73
+  cpu_monthly: [
+    ['2026-06', 'standard', 100, 90, 3, 1, 10, 95, 98],
+    ['2026-06', 'm1024',     50, 40, 2, 1,  5, 45, 48],
+    ['2026-07', 'standard', 110,100, 4, 2, 11,105,108],
+    ['2026-07', 'm1024',     60, 50, 2, 1,  6, 55, 58],
+  ],
+  gpu_monthly: [
+    ['2026-06', 'H200', 200, 150, 8, 300, 180, 3, 1, 20],
+    ['2026-07', 'H200', 210, 160, 9, 310, 190, 4, 1, 21],
+  ],
+  // held_h: cpu 100+50+110+60=320, gpu 200+210=410; jobs: cpu 10+5+11+6=32, gpu 20+21=41 -> 73
+  headline: { cpu_core_h: 320, gpu_h: 410, jobs: 73 },
 };
 
 const write = (name, obj) => { const p = join(dir, name); writeFileSync(p, JSON.stringify(obj)); return p; };
@@ -89,6 +107,43 @@ pass('real hostname in html fails');
 
 assert(run(goodData, '<html>owned by u-1234</html>') === 1, 'registry code (u-1234) in html fails');
 pass('registry code (u-1234) in html fails');
+
+// ---- contract v2: widened-row shape checks ----
+bad = clone(goodData); bad.cpu_monthly[0] = bad.cpu_monthly[0].slice(0, 7);
+assert(run(bad) === 1, 'cpu_monthly row narrower than 9 elements fails'); pass('cpu_monthly row narrower than 9 elements fails');
+
+bad = clone(goodData); bad.gpu_monthly[0] = bad.gpu_monthly[0].slice(0, 8);
+assert(run(bad) === 1, 'gpu_monthly row narrower than 10 elements fails'); pass('gpu_monthly row narrower than 10 elements fails');
+
+bad = clone(goodData); bad.cpu_monthly[0] = [...bad.cpu_monthly[0], 0];
+assert(run(bad) === 1, 'cpu_monthly row wider than 9 elements fails'); pass('cpu_monthly row wider than 9 elements fails');
+
+// ---- contract v2: non-numeric detection per new column ----
+bad = clone(goodData); bad.cpu_monthly[0][3] = 'nope';   // utilized_h
+assert(run(bad) === 1, 'non-numeric cpu_monthly utilized_h fails'); pass('non-numeric cpu_monthly utilized_h fails');
+
+bad = clone(goodData); bad.cpu_monthly[0][7] = 'nope';   // wa_used_h
+assert(run(bad) === 1, 'non-numeric cpu_monthly wa_used_h fails'); pass('non-numeric cpu_monthly wa_used_h fails');
+
+bad = clone(goodData); bad.gpu_monthly[0][5] = 'nope';   // kwh
+assert(run(bad) === 1, 'non-numeric gpu_monthly kwh fails'); pass('non-numeric gpu_monthly kwh fails');
+
+bad = clone(goodData); bad.gpu_monthly[0][4] = -1;   // residle_h negative
+assert(run(bad) === 1, 'negative gpu_monthly residle_h fails'); pass('negative gpu_monthly residle_h fails');
+
+// ---- contract v2: meta.window3 replaces window6 ----
+bad = clone(goodData); bad.meta.window6 = bad.meta.window3; delete bad.meta.window3;
+assert(run(bad) === 1, 'meta.window6 (old v1 key) fails: window3 required'); pass('meta.window6 (old v1 key) fails: window3 required');
+
+bad = clone(goodData); bad.meta.window3 = ['2026-01', '2026-02', '2026-03', '2026-04'];
+assert(run(bad) === 1, 'meta.window3 with more than 3 months fails'); pass('meta.window3 with more than 3 months fails');
+
+// ---- contract v2: conservation recomputed over window3 from the widened rows ----
+bad = clone(goodData); bad.gpu_monthly[0][2] = 999;   // held_h tampered -> breaks conservation
+assert(run(bad) === 1, 'tampered gpu_monthly held_h breaks conservation'); pass('tampered gpu_monthly held_h breaks conservation');
+
+bad = clone(goodData); bad.cpu_monthly[0][6] = 999;   // njobs tampered -> breaks conservation
+assert(run(bad) === 1, 'tampered cpu_monthly njobs breaks conservation'); pass('tampered cpu_monthly njobs breaks conservation');
 
 // fail-closed on unreadable json input
 {

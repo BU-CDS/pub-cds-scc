@@ -30,7 +30,7 @@ PUB_CPU_CLONE <- Sys.getenv("PUB_CPU_CLONE", "/usr3/bustaff/mhorn/repos/cpu-cds-
 PUB_GPU_CLONE <- Sys.getenv("PUB_GPU_CLONE", "/usr3/bustaff/mhorn/repos/gpu-cds-scc")
 
 CPU_MAX_AGE_H <- 48    # CPU emit refreshes ~daily
-GPU_MAX_AGE_D <- 35    # GPU emit refreshes ~monthly
+GPU_MAX_AGE_D <- 100   # GPU emit refreshes ~quarterly
 
 cpu_inf <- file.path(PUB_CPU_CLONE, "output", "portal_data.json")
 gpu_inf <- file.path(PUB_GPU_CLONE, "output", "public_data.json")
@@ -56,7 +56,20 @@ cur <- format(Sys.Date(), "%Y-%m")
 months_cpu <- setdiff(cpu$periods$M, cur)   # complete months only: the in-progress month never publishes
 months_gpu <- setdiff(gpu$periods$M, cur)
 stopifnot(length(months_cpu) >= 1, length(months_gpu) >= 1)
-window6 <- tail(intersect(months_cpu, months_gpu), 6)   # trailing months common to both, for the headline
+window3 <- tail(intersect(months_cpu, months_gpu), 3)   # trailing (<=3) months common to both, for the headline
+
+# contract v2 metric columns, read from the sibling emits' own F columns by name.
+# Fail closed if the emit doesn't have one: better a broken build than silently
+# zero-filling (or garbage-filling) a published metric.
+CPU_METRICS <- c("held", "utilized", "fail_h", "wkill_h", "njobs", "wa_used_h", "wa_req_h")
+GPU_METRICS <- c("held", "real", "residle_h", "kwh", "vram_h", "fail_h", "wkill_h", "njobs")
+require_cols <- function(cols, have, label) {
+  missing <- setdiff(cols, have)
+  if (length(missing))
+    stop(sprintf("50_cluster_data: %s missing required column(s): %s", label, paste(missing, collapse = ", ")))
+}
+require_cols(CPU_METRICS, cpu$Fcols, "CPU portal_data.json")
+require_cols(GPU_METRICS, gpu$Fcols, "GPU public_data.json")
 
 tomat  <- function(m, cols) { x <- as.data.table(m); setnames(x, cols); x }
 numify <- function(x, cc) { for (col in cc) x[, (col) := as.numeric(get(col))]; x }
@@ -67,12 +80,28 @@ numify <- function(x, cc) { for (col in cc) x[, (col) := as.numeric(get(col))]; 
 # into bare scalars, so toJSON renders one mixed-type JSON array per row.
 to_rows <- function(dt) unname(lapply(seq_len(nrow(dt)), function(i) unname(as.list(dt[i]))))
 
-Fc <- numify(tomat(cpu$F, cpu$Fcols), c("held", "njobs"))[pt == "M" & p %chin% months_cpu]
-Fg <- numify(tomat(gpu$F, gpu$Fcols), c("held", "njobs"))[pt == "M" & p %chin% months_gpu]
+Fc <- numify(tomat(cpu$F, cpu$Fcols), CPU_METRICS)[pt == "M" & p %chin% months_cpu]
+Fg <- numify(tomat(gpu$F, gpu$Fcols), GPU_METRICS)[pt == "M" & p %chin% months_gpu]
 
-cpu_m <- Fc[, .(held_h = round(sum(held), 2), njobs = sum(njobs)), by = .(p, node_class)]
+# column order fixed to the spec's contract v2 row shape
+cpu_m <- Fc[, .(held_h     = round(sum(held), 2),
+                utilized_h = round(sum(utilized), 2),
+                fail_h     = round(sum(fail_h), 2),
+                wkill_h    = round(sum(wkill_h), 2),
+                njobs      = sum(njobs),
+                wa_used_h  = round(sum(wa_used_h), 2),
+                wa_req_h   = round(sum(wa_req_h), 2)),
+             by = .(p, node_class)]
 setorder(cpu_m, p, node_class)
-gpu_m <- Fg[, .(held_h = round(sum(held), 2), njobs = sum(njobs)), by = .(p, card)]
+gpu_m <- Fg[, .(held_h    = round(sum(held), 2),
+                real_h    = round(sum(real), 2),
+                residle_h = round(sum(residle_h), 2),
+                kwh       = round(sum(kwh), 2),
+                vram_h    = round(sum(vram_h), 2),
+                fail_h    = round(sum(fail_h), 2),
+                wkill_h   = round(sum(wkill_h), 2),
+                njobs     = sum(njobs)),
+             by = .(p, card)]
 setorder(gpu_m, p, card)
 
 stopifnot(!any(c("proj", "user", "host", "code", "codename") %in% c(names(cpu_m), names(gpu_m))))   # belt: the strip is structural
@@ -101,13 +130,13 @@ capacity <- list(
 )
 
 headline <- list(
-  cpu_core_h = round(Fc[p %chin% window6, sum(held)], 2),
-  gpu_h      = round(Fg[p %chin% window6, sum(held)], 2),
-  jobs       = Fc[p %chin% window6, sum(njobs)] + Fg[p %chin% window6, sum(njobs)]
+  cpu_core_h = round(Fc[p %chin% window3, sum(held)], 2),
+  gpu_h      = round(Fg[p %chin% window3, sum(held)], 2),
+  jobs       = Fc[p %chin% window3, sum(njobs)] + Fg[p %chin% window3, sum(njobs)]
 )
 
 meta <- list(updated = format(Sys.Date(), "%Y-%m-%d"), public = TRUE,
-             months_cpu = I(months_cpu), months_gpu = I(months_gpu), window6 = I(window6))
+             months_cpu = I(months_cpu), months_gpu = I(months_gpu), window3 = I(window3))
 
 out <- list(meta = meta, capacity = capacity,
             cpu_monthly = to_rows(cpu_m),

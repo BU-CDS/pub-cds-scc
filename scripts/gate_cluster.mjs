@@ -70,18 +70,18 @@ if (data) {
   for (const k of Object.keys(data)) if (!TOP.includes(k)) bad(`unexpected top-level key: ${k}`);
   for (const k of TOP) if (!(k in data)) bad(`missing top-level key: ${k}`);
 
-  const META_KEYS = ['updated', 'public', 'months_cpu', 'months_gpu', 'window6'];
+  const META_KEYS = ['updated', 'public', 'months_cpu', 'months_gpu', 'window3'];
   const meta = data.meta || {};
   for (const k of Object.keys(meta)) if (!META_KEYS.includes(k)) bad(`unexpected meta key: ${k}`);
   if (!DATE.test(meta.updated)) bad(`meta.updated not YYYY-MM-DD: ${meta.updated}`);
   if (meta.public !== true) bad('meta.public is not true');
-  for (const listKey of ['months_cpu', 'months_gpu', 'window6']) {
+  for (const listKey of ['months_cpu', 'months_gpu', 'window3']) {
     for (const m of meta[listKey] || []) if (!PERIOD.test(m)) bad(`meta.${listKey}: bad period: ${m}`);
   }
   const monthsCpu = new Set(meta.months_cpu || []);
   const monthsGpu = new Set(meta.months_gpu || []);
-  const window6 = new Set(meta.window6 || []);
-  if (window6.size < 1 || window6.size > 6) bad(`meta.window6 has ${window6.size} months (want 1..6)`);
+  const window3 = new Set(meta.window3 || []);
+  if (window3.size < 1 || window3.size > 3) bad(`meta.window3 has ${window3.size} months (want 1..3)`);
 
   // ---- capacity ----
   const capCheck = (group, keys, modelSet, serverSet) => {
@@ -102,34 +102,45 @@ if (data) {
   capCheck('gpu', ['nodes', 'gpus', 'vram_gb', 'types'], CARDS, GPU_SERVERS);
 
   // ---- monthly tables ----
-  const monthlyCheck = (rows, name, classSet, monthSet) => {
+  // contract v2 row shape: [month, class, ...numFields] -- numFields named in
+  // order so a bad value's error message names the actual field, not an index.
+  const CPU_NUM_FIELDS = ['held_h', 'utilized_h', 'fail_h', 'wkill_h', 'njobs', 'wa_used_h', 'wa_req_h'];
+  const GPU_NUM_FIELDS = ['held_h', 'real_h', 'residle_h', 'kwh', 'vram_h', 'fail_h', 'wkill_h', 'njobs'];
+  const monthlyCheck = (rows, name, classSet, monthSet, numFields) => {
+    const width = 2 + numFields.length;
     for (const row of rows || []) {
-      if (row.length !== 4) { bad(`${name}: row length ${row.length} != 4`); continue; }
-      const [m, cls, held, njobs] = row;
+      if (row.length !== width) { bad(`${name}: row length ${row.length} != ${width}`); continue; }
+      const [m, cls, ...nums] = row;
       if (!PERIOD.test(m)) bad(`${name}: bad period: ${m}`);
       else if (!monthSet.has(m)) bad(`${name}: period out of meta's month list: ${m}`);
       if (!classSet.has(cls)) bad(`${name}: unknown value: ${cls}`);
-      if (!(Number.isFinite(Number(held)) && Number(held) >= 0)) bad(`${name}: bad held_h: ${held}`);
-      if (!(Number.isFinite(Number(njobs)) && Number(njobs) >= 0)) bad(`${name}: bad njobs: ${njobs}`);
+      numFields.forEach((fname, i) => {
+        const v = nums[i];
+        if (!(Number.isFinite(Number(v)) && Number(v) >= 0)) bad(`${name}: bad ${fname}: ${v}`);
+      });
     }
   };
-  monthlyCheck(data.cpu_monthly, 'cpu_monthly', NODE_CLASSES, monthsCpu);
-  monthlyCheck(data.gpu_monthly, 'gpu_monthly', CARDS, monthsGpu);
+  monthlyCheck(data.cpu_monthly, 'cpu_monthly', NODE_CLASSES, monthsCpu, CPU_NUM_FIELDS);
+  monthlyCheck(data.gpu_monthly, 'gpu_monthly', CARDS, monthsGpu, GPU_NUM_FIELDS);
 
   // ---- headline ----
   const HEADLINE_KEYS = ['cpu_core_h', 'gpu_h', 'jobs'];
   for (const k of Object.keys(data.headline || {})) if (!HEADLINE_KEYS.includes(k)) bad(`unexpected headline key: ${k}`);
   for (const k of HEADLINE_KEYS) if (!(k in (data.headline || {}))) bad(`missing headline.${k}`);
 
-  // ---- 3. conservation: headline must equal window6's slice of the monthly tables --
+  // ---- 3. conservation: headline must equal window3's slice of the monthly tables --
   const TOL = 0.1;   // per-class rounding in cpu_monthly/gpu_monthly vs the direct headline sum
-  const sumWindow = (rows) => {
+  // held_h always sits at index 2 (contract v2: [month, class, held_h, ...]); njobs'
+  // index depends on the row's width (it isn't last in cpu_monthly's field order).
+  const sumWindow = (rows, njobsIdx) => {
     let held = 0, njobs = 0;
-    for (const [m, , h, n] of rows || []) if (window6.has(m)) { held += Number(h); njobs += Number(n); }
+    for (const row of rows || []) {
+      if (window3.has(row[0])) { held += Number(row[2]); njobs += Number(row[njobsIdx]); }
+    }
     return { held, njobs };
   };
-  const cpuSum = sumWindow(data.cpu_monthly);
-  const gpuSum = sumWindow(data.gpu_monthly);
+  const cpuSum = sumWindow(data.cpu_monthly, 2 + CPU_NUM_FIELDS.indexOf('njobs'));
+  const gpuSum = sumWindow(data.gpu_monthly, 2 + GPU_NUM_FIELDS.indexOf('njobs'));
   const h = data.headline || {};
   // Number.isFinite guard first: Number(NaN-ish) > TOL is false, so an unguarded
   // Math.abs(...) > TOL would silently pass a non-numeric headline value instead

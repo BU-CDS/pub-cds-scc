@@ -27,14 +27,22 @@ All notable changes to the public cluster page.
   real sibling clones with `DEPLOY_PUSH=0` (exit 0, all 28 `test_page.mjs`
   assertions and both gate passes green, deploy step skipped, no push).
 
-- **Data layer: strip + combine** (2026-08-31, `scripts/50_cluster_data.R`,
+- **Data layer: strip + combine, contract v2** (2026-08-31, `scripts/50_cluster_data.R`,
   `scripts/test_cluster_data.R`): reads the two pool dashboards' emitted data read-only,
-  keeps month-grain aggregates for complete months only (hours delivered and job counts by
-  hardware type), derives pool capacity from the inventory records, and writes
-  `output/cluster_data.json`. Refuses identified or stale input. The monthly and capacity
-  tables serialize as typed rows, so numbers land as JSON numbers rather than quoted
-  strings. Fixture-tested (12 assertions) and verified against the real emits (19 CPU
-  months, 6 GPU months; capacity totals hand-checked against the inventory records).
+  keeps month-grain aggregates for complete months only, derives pool capacity from the
+  inventory records, and writes `output/cluster_data.json`. Monthly rows widen to a
+  per-pool metric series read from each sibling emit's own columns by name -- `cpu_monthly`:
+  `[month, node_class, held_h, utilized_h, fail_h, wkill_h, njobs, wa_used_h, wa_req_h]`;
+  `gpu_monthly`: `[month, card, held_h, real_h, residle_h, kwh, vram_h, fail_h, wkill_h,
+  njobs]` -- failing closed if either emit is missing a required column. `meta.window3`
+  (trailing complete months, up to 3, common to both pools) replaces the old six-month
+  window; `headline` (kept for the gate's conservation check, not rendered) sums over
+  `window3`. The GPU input freshness ceiling widens 35d -> 100d for the new quarterly
+  cadence; the CPU input ceiling stays 48h (still-daily refresh). Refuses identified or
+  stale input. The monthly and capacity tables serialize as typed rows, so numbers land
+  as JSON numbers rather than quoted strings. Fixture-tested (15 assertions) and verified
+  against the real emits (38 CPU rows across 19 months, 29 GPU rows across 6 months;
+  capacity totals hand-checked against the inventory records).
 
 - **Gate: whitelist/blocklist/conservation for cluster_data** (2026-08-31,
   `scripts/gate_cluster.mjs`, `scripts/test_gate.mjs`): checks `output/cluster_data.json`
