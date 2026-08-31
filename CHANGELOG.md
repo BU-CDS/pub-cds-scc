@@ -4,6 +4,29 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Ops: monthly refresh + page-branch deploy** (2026-08-31, `refresh_public.sh`,
+  `deploy.sh`, `scripts/test_deploy.sh`): `refresh_public.sh` runs the pipeline
+  end to end -- strip+combine, de-id gate, build, structure test, de-id gate
+  again over the built page, then publish -- under an `flock` (one attempt,
+  waits rather than skips: a monthly cron losing a race costs a month) with
+  throttled operator alerts on failure (address from gitignored
+  `config/alert_email`, else silent). `deploy.sh` publishes `index.html` to
+  the `page` branch GitHub Pages serves as a single amended, force-pushed
+  commit (worktree removed on an EXIT trap so a mid-deploy failure can't
+  strand a registration), writing `.nojekyll` and a `CNAME` from
+  `PORTAL_PUBLIC_DOMAIN` (default `cluster.cds.bu.edu`); refuses any
+  `index.html` containing `<script` or missing the "updated monthly" stamp;
+  `DEPLOY_PUSH=0` stages the commit without pushing (also the switch
+  `refresh_public.sh` uses to skip the publish step entirely for a staged,
+  no-push run of the whole pipeline). Lifecycle-tested in throwaway repos
+  under `mktemp -d` (11 assertions: a failed push cannot strand a worktree, a
+  second deploy after a failure and after a stale/self-healing registration
+  both succeed, the happy path publishes `index.html`/`.nojekyll`/`CNAME`
+  with no leftover worktree, `PORTAL_PUBLIC_DOMAIN` overrides the CNAME, and
+  a scripted or unstamped page is refused); also run end to end against the
+  real sibling clones with `DEPLOY_PUSH=0` (exit 0, all 28 `test_page.mjs`
+  assertions and both gate passes green, deploy step skipped, no push).
+
 - **Data layer: strip + combine** (2026-08-31, `scripts/50_cluster_data.R`,
   `scripts/test_cluster_data.R`): reads the two pool dashboards' emitted data read-only,
   keeps month-grain aggregates for complete months only (hours delivered and job counts by
