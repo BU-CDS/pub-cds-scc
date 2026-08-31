@@ -198,5 +198,20 @@ const U_CODE = /\bu-\d+\b/, SCC_CODE = /\bscc-[a-z0-9]+\b/i;
 // ---- 9. viewport meta ----
 has(html, '<meta name="viewport"', 'viewport meta present');
 
+// ---- 10. layout-tightening pass (maintainer computed-layout review): fitted
+// GPU blocks, narrower label columns, a 3-column CPU node grid, an aligned
+// 4-column KPI grid, deck-titled h3s, and a slim centered period strip ----
+const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
+has(styleBlock, '.deck h3{', 'deck titles (GPU/CPU Pool, GPU/CPU Totals) get their own h3 rule');
+has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(4,1fr)', 'KPI cards use a 4-column grid so both cards align tile-for-tile');
+/--gpu-w:clamp\(16px,1\.95vw,40px\)/.test(styleBlock)
+  ? ok('GPU block width is fitted to the twin-panel layout (clamped to a 40px max, not the full-width-portal 64px)')
+  : bad('GPU block width (--gpu-w) is not clamped to the fitted 16-40px range');
+has(styleBlock, '.hwlbl{flex:0 0 110px', 'hardware label column is narrowed to 110px (the long names live in the tooltip, not this column)');
+has(styleBlock, '.pool-cpu .hwnodes{display:grid;grid-template-columns:repeat(3,max-content)', 'CPU node clusters lay out on a fixed 3-column grid (clean 3+3 rows, no arbitrary wrap)');
+has(styleBlock, '#periodctl{padding:8px 13px', 'the period control is a slim strip, not a full-height deck');
+has(styleBlock, '#periodctl .row{justify-content:center', 'the period control row is centered');
+not(styleBlock, 'h2{', 'the unused h2 rule was removed (dead CSS -- no <h2> in the markup)');
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
