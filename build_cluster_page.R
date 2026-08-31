@@ -57,14 +57,24 @@ month_label <- function(m) paste0(MON[as.integer(substr(m, 6, 7))], " ", substr(
 is_sparse <- function(months) grepl("-01$", months) | seq_along(months) == 1L   # January ticks + the series' first month
 
 # ---- capacity cards: one per types[] row, plus a row of node-count squares --
+# per_node_ram_gb means per-NODE total RAM for the CPU pool (count*ram
+# reconciles against capacity.cpu.ram_gb) but per-GPU VRAM for the GPU pool
+# (only count*per_node*ram reconciles against capacity.gpu.vram_gb). The CPU
+# card's "N cores, M GB" shape genuinely means M GB per node, so the identical
+# shape on a GPU card would train the reader to misread M GB as a node total
+# -- the GPU card spells out "each" so the number can only read as per-GPU.
 hw_cards <- function(types, unit) {
   rows <- vapply(seq_len(nrow(types)), function(i) {
     label <- types[i, 1]; server <- types[i, 2]
     count <- as.numeric(types[i, 3]); per_node <- as.numeric(types[i, 4]); ram <- as.numeric(types[i, 5])
     disp <- if (unit == "cores") model_label(label) else label
     sq <- paste(rep(sprintf('<span class="sq" title="%s"></span>', server), count), collapse = "")
-    sprintf('<div class="hwcard"><div class="hwlabel">%s — %s × (%s %s, %s GB)</div><div class="hwsq">%s</div></div>',
-            disp, fmt(count), fmt(per_node), unit, fmt(ram), sq)
+    inner <- if (unit == "cores")
+      sprintf('%s %s, %s GB', fmt(per_node), unit, fmt(ram))
+    else
+      sprintf('%s %s · %s GB each', fmt(per_node), unit, fmt(ram))
+    sprintf('<div class="hwcard"><div class="hwlabel">%s — %s × (%s)</div><div class="hwsq">%s</div></div>',
+            disp, fmt(count), inner, sq)
   }, character(1))
   paste(rows, collapse = "\n")
 }

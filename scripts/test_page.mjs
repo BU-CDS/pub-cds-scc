@@ -97,6 +97,23 @@ const gpuChart = chartSlice('chart-gpu');
 has(cpuChart, 'core-hours allocated to jobs', 'CPU chart caption names the measure');
 has(gpuChart, 'GPU-hours allocated to jobs', 'GPU chart caption names the measure');
 
+// ---- 4b. GPU hardware cards state VRAM unambiguously: the CPU card's
+// "N cores, M GB" shape genuinely means M GB per node, so the identical shape
+// on a GPU card ("N GPUs, M GB") would read M GB as a node total when it is
+// actually per-GPU (only count*per_node*ram reconciles against
+// capacity.gpu.vram_gb) -- every GPU card must spell out "each" or "/GPU".
+{
+  const gpuSecStart = html.indexOf('<section class="hw hw-gpu">');
+  const gpuSecEnd = html.indexOf('</section>', gpuSecStart);
+  const gpuSec = gpuSecStart >= 0 ? html.slice(gpuSecStart, gpuSecEnd) : '';
+  const labels = [...gpuSec.matchAll(/<div class="hwlabel">([^<]*)<\/div>/g)].map(m => m[1]);
+  const perGpuQualifier = /GB each\b|GB\/GPU\b/;
+  const unqualified = labels.filter(l => !perGpuQualifier.test(l));
+  (labels.length > 0 && unqualified.length === 0)
+    ? ok('every GPU hardware card states VRAM per GPU, not per node (' + labels.length + ' checked)')
+    : bad('a GPU hardware card lacks a per-GPU VRAM qualifier: ' + (unqualified[0] || '(no GPU cards found)'));
+}
+
 // ---- 5. blocklist: every tooltip and every rendered text node ----
 const U_CODE = /\bu-\d+\b/, SCC_CODE = /\bscc-[a-z0-9]+\b/i;
 {
