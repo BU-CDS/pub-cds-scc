@@ -12,3 +12,13 @@ All notable changes to the public cluster page.
   tables serialize as typed rows, so numbers land as JSON numbers rather than quoted
   strings. Fixture-tested (12 assertions) and verified against the real emits (19 CPU
   months, 6 GPU months; capacity totals hand-checked against the inventory records).
+
+- **Gate: whitelist/blocklist/conservation for cluster_data** (2026-08-31,
+  `scripts/gate_cluster.mjs`, `scripts/test_gate.mjs`): checks `output/cluster_data.json`
+  (and, when given a second argument, the built page's HTML) before the whitelist
+  is trusted to publish. Whitelists every hardware model, server model, card, node
+  class, and `YYYY-MM` period against the same sibling inventory CSVs the data layer
+  reads; blocklist-scans the full text for real hostnames and registry-code patterns;
+  recomputes the headline totals from the monthly tables and fails on any mismatch.
+  Fails closed on unreadable input. Fixture-tested (12 assertions) and run against the
+  real Task-1 output (exit 0).
