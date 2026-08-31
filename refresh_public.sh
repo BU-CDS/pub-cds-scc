@@ -2,8 +2,9 @@
 # (login shell: sources /etc/profile so Lmod's 'module' is defined under cron)
 # refresh_public.sh — regenerate + publish the CDS public cluster page (the
 # CPU + GPU buy-in pool showcase). Monthly pipeline: strip+combine the sibling
-# emits -> de-id gate -> build the zero-JS page -> structure test -> de-id
-# gate again over the built page -> publish (deploy.sh).
+# emits -> de-id gate -> build the portal-lift page (twin pool panels, period
+# selector, per-pool KPI totals; inline JS) -> structure test -> DOM-shim JS
+# execution check -> de-id gate again over the built page -> publish (deploy.sh).
 #
 # Idempotent + flock-guarded (overlapping runs skip the lock, they don't
 # clobber output/index.html) + logged. Local-only: output/, index.html,
@@ -93,6 +94,7 @@ run Rscript "$S/50_cluster_data.R"                                   # sibling e
 run node "$S/gate_cluster.mjs" "$ROOT/output/cluster_data.json"      # de-id gate: data layer
 run Rscript "$ROOT/build_cluster_page.R"                             # cluster_data.json -> index.html
 run node "$S/test_page.mjs" "$ROOT/index.html"                       # structure + de-id assertions on the built page
+run node "$ROOT/validate.mjs" "$ROOT/index.html"                     # DOM-shim: the page's inline JS must execute cleanly
 run node "$S/gate_cluster.mjs" "$ROOT/output/cluster_data.json" "$ROOT/index.html"   # de-id gate: page too
 
 if [ "${DEPLOY_PUSH:-1}" = 1 ]; then

@@ -51,23 +51,37 @@ All notable changes to the public cluster page.
   class, and `YYYY-MM` period against the same sibling inventory CSVs the data layer
   reads; blocklist-scans the full text for real hostnames and registry-code patterns;
   recomputes the headline totals from the monthly tables and fails on any mismatch.
-  Fails closed on unreadable input. Fixture-tested (12 assertions) and run against the
+  Fails closed on unreadable input. Fixture-tested (24 assertions) and run against the
   real Task-1 output (exit 0).
 
-- **Public page: static zero-JS showcase** (2026-08-31, `build_cluster_page.R`,
-  `scripts/test_page.mjs`): assembles `index.html` from `output/cluster_data.json` by
-  R string concatenation only -- zero `<script>` anywhere, one light theme (no
-  `data-theme`, no `localStorage`, no `prefers-color-scheme`), tooltips are `title=`
-  attributes. Renders the header lockup (plate + school name), a headline band
-  (cores / GPUs / core-hours / GPU-hours / jobs), one hardware section per pool (one
-  card per hardware type with a row of node-count squares; CPU model codes render
-  human-readably, e.g. `Gold-6242` -> "Xeon Gold 6242"; GPU cards spell out
-  "GB each" since the same VRAM figure is per-node for CPU but per-GPU for GPU),
-  and a delivered section with two charts -- one bar per month, summed across
-  node-class/card -- and sparse January-plus-first-month axis labels. Assets
-  (plate, FCDS signature, both Whitney weights) are read from the sibling clone
-  and embedded base64, never copied into the tree. Fixture-tested against the
-  real Task-1 output (28 assertions covering structure, containment, the
-  per-GPU VRAM qualifier, and the de-id blocklist) and run through
-  `gate_cluster.mjs` with the built page (exit 0). `index.html` is 218 KB,
-  dominated by the embedded assets.
+- **Public page: portal-lift rebuild** (2026-08-31, `build_cluster_page.R`,
+  `scripts/test_page.mjs`, `validate.mjs`; spec Revision R1): replaces the static
+  zero-JS showcase with a lift of the two portals' own hardware/status panels --
+  the old zero-JS rule is dead, this page ships exactly one inline `<script>`,
+  self-contained (no `fetch`/`XMLHttpRequest`, no `localStorage`, no
+  `document.cookie`, no `prefers-color-scheme`). Layout: header lockup (unchanged)
+  -> one deckrow with the GPU pool panel left and the CPU pool panel right (each
+  lifted from `gpu-cds-scc/build_gpu_portal.R` `livePanel()` / `cpu-cds-scc/
+  build_cpu_portal.R` `renderLive()` -- hwtop/hwcols/hwrow/cnode idiom, CPU model
+  codes rendered human-readably, e.g. `Gold-6242` -> "Xeon Gold 6242") -> a
+  month-grain period selector (every published month plus "Past 3 months"
+  (default), "Past 6 months", "All months") -> a second deckrow with the GPU and
+  CPU KPI totals cards (tile labels/tips lifted verbatim from each portal's own
+  `kpi()` helper and `TIPS` object) -> footer (unchanged). Every panel block
+  renders fully saturated -- capacity, not occupancy -- with no LIVE/STALE badge
+  and no held counts, since this page carries no live feed; tooltips are built
+  purely from `capacity.types[]` (Server, RAM-per-node/VRAM-per-GPU, per-cluster
+  unit counts) -- no hostnames, no install dates, matching what contract v2
+  actually has. The KPI cards are server-rendered for the default trailing-3-month
+  window so the page means something before/without JS, and the inline script
+  repeats the identical arithmetic (R and JS share `Math.round`-compatible
+  rounding) to recompute both cards on a period change. `validate.mjs` (copied
+  from `cpu-cds-scc/validate.mjs`'s DOM-shim runner) executes the page's inline
+  JS under a minimal shim and fails the build on any runtime throw; wired into
+  `refresh_public.sh` between the structure test and the second de-id gate pass.
+  Fixture-tested against the real Task 7 output (59 assertions covering
+  structure/containment, panel saturation, the period selector, both KPI cards'
+  tile labels, the de-id blocklist, and a functional simulation that executes the
+  embedded script and confirms a period change recomputes both cards correctly)
+  and run through `gate_cluster.mjs` with the built page (exit 0). `index.html`
+  is 231 KB, dominated by the embedded assets.

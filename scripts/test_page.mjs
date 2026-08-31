@@ -1,7 +1,10 @@
-// test_page.mjs — assert the built showcase page's STRUCTURE and de-id/theme
-// policy: zero JS, one light theme, main holds exactly the four sections in
-// order, one bar per month in each delivered chart, and every rendered string
-// (tooltips + text) passes the same blocklist the data-layer gate enforces.
+// test_page.mjs — assert the built public page's STRUCTURE, JS-execution safety, and
+// de-id/blocklist policy for the portal-lift design (spec Revision R1): twin pool
+// panels (GPU left, CPU right), a month-grain period selector (default: trailing 3
+// complete months), and per-pool KPI totals cards recomputed by inline JS. The old
+// zero-JS rule is dead; this suite checks the inline script is present, self-
+// contained (no external requests / storage / theme machinery), and functionally
+// correct (simulated period change recomputes the KPI cards).
 //
 // Run: module load nodejs/20.12.2 && node scripts/test_page.mjs [index.html]
 // Exit 0 = pass, 1 = wrong, 2 = usage.
@@ -25,12 +28,20 @@ const bad = m => { console.log('FAIL: ' + m); FAILS++; };
 const has = (s, needle, m) => (s.includes(needle) ? ok(m) : bad(m + ' -- missing: ' + JSON.stringify(needle).slice(0, 90)));
 const not = (s, needle, m) => (s.includes(needle) ? bad(m + ' -- present: ' + JSON.stringify(needle).slice(0, 90)) : ok(m));
 
-// ---- 0. zero JS anywhere ----
-(html.match(/<script/g) || []).length === 0 ? ok('zero <script occurrences') : bad('found <script in the page');
+// ---- 0. exactly one inline <script>; no external requests / storage / theme machinery ----
+// (the old zero-JS rule is dead per spec Revision R1 -- inline JS is now required, but it
+// must stay self-contained: no fetch/XHR, no browser storage, no OS-theme detection.)
+{
+  const scriptCount = (html.match(/<script\b/g) || []).length;
+  scriptCount === 1 ? ok('page carries exactly one inline <script>') : bad('found ' + scriptCount + ' <script> tags, want exactly 1');
+}
+not(html, '<script src=', 'no externally-sourced <script src=> (inline only)');
+for (const needle of ['fetch(', 'XMLHttpRequest', 'localStorage', 'document.cookie', 'prefers-color-scheme'])
+  not(html, needle, 'no "' + needle + '" anywhere (no external requests / storage / theme machinery)');
 
-// ---- 1. containment, not just order: a stray </div> can close a section early
-// while every string check still passes. Tiny stack parser over the static
-// markup (copied verbatim from cpu-cds-scc/scripts/test_page.mjs).
+// ---- 1. containment, not just order: a stray </div> can close a section early while
+// every string check still passes. Tiny stack parser over the static markup (copied
+// verbatim from the Task-3 test / cpu-cds-scc/scripts/test_page.mjs).
 const parentOf = (() => {
   const body = html.slice(html.indexOf('<body')).replace(/<script[\s\S]*?<\/script>/g, '');
   const stack = [], parent = {}; const voids = new Set(['br', 'img', 'input', 'meta', 'link', 'hr']);
@@ -40,96 +51,150 @@ const parentOf = (() => {
     const id = (attrs.match(/\bid="([^"]+)"/) || [])[1], cls = (attrs.match(/\bclass="([^"]+)"/) || [])[1];
     const lab = tag + (id ? '#' + id : '') + (cls ? '.' + cls.replace(/\s+/g, '.') : '');
     parent[lab] = stack.length ? stack[stack.length - 1].lab : '(root)';
-    if (!voids.has(tag)) stack.push({ tag, lab, row: cls === 'deckrow' ? (parent.__rows = (parent.__rows || 0) + 1) : undefined });
+    if (!voids.has(tag)) stack.push({ tag, lab });
   }
   return parent;
 })();
+// note: the parser's label key is "tag#id.class1.class2..." when an element carries
+// both -- these wrapper divs carry an id (for the JS/test hooks) AND a class (for
+// per-pool CSS), so the lookup key must include both, in source attribute order.
 const P = sel => parentOf[sel] || '(absent)';
-P('div.headline') === 'main' ? ok('headline band is a direct child of main') : bad('headline band parent is ' + P('div.headline'));
-P('section.hw.hw-cpu') === 'main' ? ok('CPU hardware section is a direct child of main') : bad('CPU hw section parent is ' + P('section.hw.hw-cpu'));
-P('section.hw.hw-gpu') === 'main' ? ok('GPU hardware section is a direct child of main') : bad('GPU hw section parent is ' + P('section.hw.hw-gpu'));
-P('section.delivered') === 'main' ? ok('delivered section is a direct child of main') : bad('delivered section parent is ' + P('section.delivered'));
+P('div.deckrow') === 'main' ? ok('a deckrow is a direct child of main') : bad('deckrow parent is ' + P('div.deckrow'));
+P('div#gpupanel.deck.pool-gpu') === 'div.deckrow' ? ok('GPU panel sits inside a deckrow') : bad('GPU panel parent is ' + P('div#gpupanel.deck.pool-gpu'));
+P('div#cpupanel.deck.pool-cpu') === 'div.deckrow' ? ok('CPU panel sits inside a deckrow') : bad('CPU panel parent is ' + P('div#cpupanel.deck.pool-cpu'));
+P('div#periodctl.deck') === 'main' ? ok('period control is a direct child of main') : bad('period control parent is ' + P('div#periodctl.deck'));
+P('div#gpucard.deck') === 'div.deckrow' ? ok('GPU totals card sits inside a deckrow') : bad('GPU totals card parent is ' + P('div#gpucard.deck'));
+P('div#cpucard.deck') === 'div.deckrow' ? ok('CPU totals card sits inside a deckrow') : bad('CPU totals card parent is ' + P('div#cpucard.deck'));
+
+(html.indexOf('id="gpupanel"') >= 0 && html.indexOf('id="gpupanel"') < html.indexOf('id="cpupanel"'))
+  ? ok('GPU panel renders before the CPU panel (GPU left, CPU right)')
+  : bad('GPU panel does not precede the CPU panel in source order');
+(html.indexOf('id="gpucard"') >= 0 && html.indexOf('id="gpucard"') < html.indexOf('id="cpucard"'))
+  ? ok('GPU totals card renders before the CPU totals card (GPU left, CPU right)')
+  : bad('GPU totals card does not precede the CPU totals card in source order');
+
 {
   const main = html.slice(html.indexOf('<main>'), html.indexOf('</main>'));
-  const kids = [...main.matchAll(/<(div|section)\b[^>]*>/g)].filter(m => {
-    // only count the direct children we just asserted parentage for, not their descendants
-    const idx = m.index;
-    const before = main.slice(0, idx);
-    return /<(div class="headline"|section class="hw hw-cpu"|section class="hw hw-gpu"|section class="delivered")/.test(m[0]);
-  });
-  kids.length === 4 ? ok('main holds exactly 4 sections (headline, 2 hardware, delivered)') : bad('main holds ' + kids.length + ' of the expected 4 top sections');
   const opens = (main.match(/<div\b/g) || []).length, closes = (main.match(/<\/div>/g) || []).length;
   opens === closes ? ok('div tags balance inside main (' + opens + ')') : bad('div tags unbalanced inside main: ' + opens + ' open vs ' + closes + ' close');
 }
 
-// ---- 2. header lockup ----
+// ---- 2. header lockup (unchanged) ----
 const head1 = (html.match(/<h1>([\s\S]*?)<\/h1>/) || ['', ''])[1];
 has(head1, 'class="buplate"', 'h1 carries the University plate image');
 has(head1, 'Faculty of Computing &amp; Data Sciences', 'h1 carries the school name');
 
-// ---- 3. headline band labels ----
-const headline = (html.match(/<div class="headline">([\s\S]*?)<\/div>\s*<section/) || ['', ''])[1] || html;
-for (const lbl of ['cores', 'GPUs', 'core-hours', 'GPU-hours', 'jobs'])
-  has(headline, lbl, 'headline band shows the "' + lbl + '" label');
+// ---- 3. every panel block renders fully saturated: capacity, not occupancy ----
+{
+  const totalBlocks = (html.match(/<i\b[^>]*><\/i>/g) || []).length;
+  const onBlocks = (html.match(/<i class="on"><\/i>/g) || []).length;
+  totalBlocks > 0 && totalBlocks === onBlocks
+    ? ok('every panel block is saturated (' + onBlocks + '/' + totalBlocks + ')')
+    : bad('panel blocks not fully saturated: ' + onBlocks + ' of ' + totalBlocks + ' carry class="on"');
+}
 
-const fmt = n => Math.round(n).toLocaleString('en-US');
-has(headline, fmt(data.capacity.cpu.cores), 'headline shows the CPU core count');
-has(headline, fmt(data.capacity.gpu.gpus), 'headline shows the GPU count');
-has(headline, fmt(data.headline.cpu_core_h), 'headline shows the CPU core-hours total');
-has(headline, fmt(data.headline.gpu_h), 'headline shows the GPU-hours total');
-has(headline, fmt(data.headline.jobs), 'headline shows the jobs total');
+// ---- 4. no LIVE/STALE machinery (this is capacity, not a live occupancy feed) ----
+for (const needle of ['livebadge', 'stalebadge', 'livedot', 'LIVE</span>', '>STALE<'])
+  not(html, needle, 'no "' + needle + '" (capacity panels carry no live/stale badge)');
+// the footer's "updated monthly" stamp is unchanged from Task 3 (spec: "Footer unchanged")
+// and deploy.sh still greps for it verbatim -- must still be present, not forbidden.
+has(html, 'updated monthly', 'footer keeps the "updated monthly" stamp deploy.sh checks for');
 
-// ---- 4. delivered charts: one bar per month ----
-const chartSlice = (cls) => {
-  const start = html.indexOf('class="chart ' + cls + '"');
-  if (start < 0) return '';
-  const next = html.indexOf('class="chart ', start + 10);
-  return html.slice(start, next > 0 ? next : html.indexOf('</section>', start));
+// ---- 5. period selector: present, month-grain, default = trailing 3 complete months ----
+has(html, '<select id="period"', 'period <select> is present');
+/<option value="past3"[^>]*\bselected\b[^>]*>Past 3 months<\/option>/.test(html)
+  ? ok('period selector defaults to "Past 3 months"')
+  : bad('period selector default option is not "Past 3 months" selected');
+has(html, '<option value="past6">Past 6 months</option>', 'period selector offers "Past 6 months"');
+has(html, '<option value="all">All months</option>', 'period selector offers "All months"');
+for (const m of [...new Set([...data.meta.months_cpu.slice(-2), ...data.meta.months_gpu.slice(-2)])])
+  has(html, '<option value="' + m + '"', 'period selector lists month ' + m);
+
+// ---- 6. two KPI totals cards with the portals' tile labels, GPU left / CPU right ----
+const sliceFrom = (startMarker, endMarkers) => {
+  const s = html.indexOf(startMarker);
+  if (s < 0) return '';
+  const ends = endMarkers.map(e => html.indexOf(e)).filter(i => i > s);
+  const e = ends.length ? Math.min(...ends) : html.indexOf('</main>');
+  return html.slice(s, e);
 };
-const cpuChart = chartSlice('chart-cpu');
-const gpuChart = chartSlice('chart-gpu');
-{
-  const cpuBars = (cpuChart.match(/<div class=bar /g) || []).length;
-  const gpuBars = (gpuChart.match(/<div class=bar /g) || []).length;
-  cpuBars === data.meta.months_cpu.length ? ok('CPU chart renders one bar per month (' + cpuBars + ')') : bad('CPU chart has ' + cpuBars + ' bars, want ' + data.meta.months_cpu.length);
-  gpuBars === data.meta.months_gpu.length ? ok('GPU chart renders one bar per month (' + gpuBars + ')') : bad('GPU chart has ' + gpuBars + ' bars, want ' + data.meta.months_gpu.length);
-}
-has(cpuChart, 'core-hours allocated to jobs', 'CPU chart caption names the measure');
-has(gpuChart, 'GPU-hours allocated to jobs', 'GPU chart caption names the measure');
+const gpuCard = sliceFrom('id="gpucard"', ['id="cpucard"']);
+const cpuCard = sliceFrom('id="cpucard"', ['</main>']);
+gpuCard && cpuCard ? ok('both KPI totals cards were located in the page') : bad('could not locate both KPI totals cards');
+has(gpuCard, 'GPU Totals', 'GPU card carries its "GPU Totals" heading');
+has(cpuCard, 'CPU Totals', 'CPU card carries its "CPU Totals" heading');
+for (const lbl of ['Held core-h', 'Avg Efficiency', 'Under-utilized core-h', 'Utilized core-h', 'Jobs', 'Walltime Accuracy', 'on hard-failed jobs', 'on wall-killed jobs'])
+  has(cpuCard, lbl, 'CPU totals card shows the "' + lbl + '" tile');
+for (const lbl of ['Held GPU-h', 'Avg Utilization', 'Under-Utilized GPU-h', 'Non-Utilized GPU-h', 'Energy kWh', 'Mean VRAM', 'on hard-failed jobs', 'on wall-killed jobs'])
+  has(gpuCard, lbl, 'GPU totals card shows the "' + lbl + '" tile');
 
-// ---- 4b. GPU hardware cards state VRAM unambiguously: the CPU card's
-// "N cores, M GB" shape genuinely means M GB per node, so the identical shape
-// on a GPU card ("N GPUs, M GB") would read M GB as a node total when it is
-// actually per-GPU (only count*per_node*ram reconciles against
-// capacity.gpu.vram_gb) -- every GPU card must spell out "each" or "/GPU".
+// ---- 6b. the server-rendered DEFAULT window figures are actually correct, not just present --
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const fmth = x => { if (x == null) return '—'; if (x <= 0) return '0'; if (x < 1) return '&lt;1'; return Math.round(x).toLocaleString('en-US'); };
+const CPU_FIELDS = ['held', 'utilized', 'fail_h', 'wkill_h', 'njobs', 'wa_used_h', 'wa_req_h'];
+const GPU_FIELDS = ['held', 'real', 'residle_h', 'kwh', 'vram_h', 'fail_h', 'wkill_h', 'njobs'];
+const sumWindow = (rows, months, fields) => {
+  const set = new Set(months);
+  const T = Object.fromEntries(fields.map(f => [f, 0]));
+  for (const r of rows) if (set.has(r[0])) fields.forEach((f, i) => { T[f] += r[2 + i]; });
+  return T;
+};
+const wCpu = sumWindow(data.cpu_monthly, data.meta.window3, CPU_FIELDS);
+const wGpu = sumWindow(data.gpu_monthly, data.meta.window3, GPU_FIELDS);
+has(cpuCard, fmth(wCpu.held), 'CPU totals: Held core-h matches the recomputed window3 total');
+has(cpuCard, (wCpu.held ? Math.round(100 * wCpu.utilized / wCpu.held) : 0) + '%', 'CPU totals: Avg Efficiency % matches recomputed window3');
+has(gpuCard, fmth(wGpu.held), 'GPU totals: Held GPU-h matches the recomputed window3 total');
+has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'GPU totals: Avg Utilization % matches recomputed window3');
+
+// ---- 7. functional: execute the page's inline JS and simulate a period change,
+// verifying the KPI cards recompute correctly for a non-default window ----
 {
-  const gpuSecStart = html.indexOf('<section class="hw hw-gpu">');
-  const gpuSecEnd = html.indexOf('</section>', gpuSecStart);
-  const gpuSec = gpuSecStart >= 0 ? html.slice(gpuSecStart, gpuSecEnd) : '';
-  const labels = [...gpuSec.matchAll(/<div class="hwlabel">([^<]*)<\/div>/g)].map(m => m[1]);
-  const perGpuQualifier = /GB each\b|GB\/GPU\b/;
-  const unqualified = labels.filter(l => !perGpuQualifier.test(l));
-  (labels.length > 0 && unqualified.length === 0)
-    ? ok('every GPU hardware card states VRAM per GPU, not per node (' + labels.length + ' checked)')
-    : bad('a GPU hardware card lacks a per-GPU VRAM qualifier: ' + (unqualified[0] || '(no GPU cards found)'));
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n;\n');
+  const handlers = { change: [] };
+  const makeEl = (id) => ({
+    id, value: '', innerHTML: '', dataset: {}, style: {},
+    addEventListener(ev, fn) { if (ev === 'change' && id === 'period') handlers.change.push(fn); },
+    appendChild() {}, setAttribute() {},
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    querySelectorAll: () => [], closest: () => null,
+  });
+  const els = { '#period': makeEl('period'), '#kpi-cpu': makeEl('kpi-cpu'), '#kpi-gpu': makeEl('kpi-gpu') };
+  const document = {
+    querySelector: (sel) => els[sel] || makeEl(sel.replace(/^[.#]/, '')),
+    querySelectorAll: () => [],
+    getElementById: (id) => els['#' + id] || makeEl(id),
+    createElement: () => makeEl('tip'),
+    addEventListener: () => {},
+    body: { appendChild() {} },
+  };
+  const window = { addEventListener: () => {}, matchMedia: () => ({ matches: false, addEventListener() {} }) };
+  const localStorage = { getItem: () => null, setItem() {} };
+  try {
+    new Function('document', 'window', 'localStorage', scripts)(document, window, localStorage);
+    if (!scripts.trim()) throw new Error('no <script> content found');
+    els['#period'].value = 'all';
+    if (handlers.change.length) handlers.change.forEach(fn => fn({ target: els['#period'] }));
+    else bad('functional: the #period change handler was never registered');
+    const wCpuAll = sumWindow(data.cpu_monthly, data.meta.months_cpu, CPU_FIELDS);
+    const wGpuAll = sumWindow(data.gpu_monthly, data.meta.months_gpu, GPU_FIELDS);
+    has(els['#kpi-cpu'].innerHTML, fmth(wCpuAll.held), 'functional: selecting "All months" recomputes CPU Held core-h correctly');
+    has(els['#kpi-gpu'].innerHTML, fmth(wGpuAll.held), 'functional: selecting "All months" recomputes GPU Held GPU-h correctly');
+  } catch (e) {
+    bad('functional: page JS threw during simulated period change -- ' + (e && e.message ? e.message : e));
+  }
 }
 
-// ---- 5. blocklist: every tooltip and every rendered text node ----
+// ---- 8. blocklist: every data-tip tooltip and every rendered text node ----
 const U_CODE = /\bu-\d+\b/, SCC_CODE = /\bscc-[a-z0-9]+\b/i;
 {
-  const titles = [...html.matchAll(/title="([^"]*)"/g)].map(m => m[1]);
-  const bad_t = titles.filter(t => U_CODE.test(t) || SCC_CODE.test(t));
-  bad_t.length === 0 ? ok('every title= tooltip passes the blocklist (' + titles.length + ' checked)') : bad('a tooltip matches the blocklist: ' + bad_t[0]);
+  const tips = [...html.matchAll(/data-tip="([^"]*)"/g)].map(m => m[1]);
+  const bad_t = tips.filter(t => U_CODE.test(t) || SCC_CODE.test(t));
+  (tips.length > 0 && bad_t.length === 0) ? ok('every data-tip tooltip passes the blocklist (' + tips.length + ' checked)') : bad('a tooltip matches the blocklist: ' + (bad_t[0] || '(no tooltips found)'));
   const text = html.replace(/<[^>]+>/g, ' ');
-  (!U_CODE.test(text) && !SCC_CODE.test(text)) ? ok('rendered text passes the blocklist') : bad('rendered text matches a blocklist pattern');
+  (!U_CODE.test(text) && !SCC_CODE.test(text)) ? ok('rendered text (incl. embedded JSON) passes the blocklist') : bad('rendered text matches a blocklist pattern');
 }
 
-// ---- 6. no theme machinery, single light theme ----
-not(html, 'data-theme', 'no data-theme attribute anywhere');
-not(html, 'localStorage', 'no localStorage anywhere');
-not(html, 'prefers-color-scheme', 'no prefers-color-scheme anywhere');
-
-// ---- 7. viewport meta ----
+// ---- 9. viewport meta ----
 has(html, '<meta name="viewport"', 'viewport meta present');
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
