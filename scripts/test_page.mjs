@@ -267,9 +267,9 @@ has(styleBlock, '#gpupanel,#gpucard{flex:0 1 40%', 'GPU panel + totals card take
 has(styleBlock, '#cpupanel,#cpucard{flex:1 1 0', 'CPU panel + totals card take the wider (~60%) flex share');
 has(styleBlock, '.hwlbl{color:var(--text);white-space:nowrap', 'hardware labels never wrap mid-name (.hwlbl gets white-space:nowrap)');
 not(styleBlock, '.pool-cpu .hwnodes{display:grid', 'CPU node grid override was dropped -- back to flex-wrap now that the wider 60% column fits the E5 row on one line');
-/--core-s:clamp\(5px,0\.38vw,12px\)/.test(styleBlock)
-  ? ok('CPU core-square size is retuned to fit six clusters on one line in the narrower 60% column')
-  : bad('--core-s is not retuned to the fitted clamp(5px,0.38vw,12px)');
+/--core-s:clamp\(5px,0\.35vw,12px\)/.test(styleBlock)
+  ? ok('CPU core-square size carries a real fit buffer (clamp(5px,0.35vw,12px), ~31px margin at 1440)')
+  : bad('--core-s is not buffered to the fitted clamp(5px,0.35vw,12px)');
 /--gpu-w:clamp\(13px,0\.93vw,40px\)/.test(styleBlock)
   ? ok('GPU block width is retuned down (40% column is narrower than the old 50/50 half)')
   : bad('--gpu-w is not retuned to the fitted clamp(13px,0.93vw,40px)');
