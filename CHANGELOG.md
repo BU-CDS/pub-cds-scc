@@ -22,3 +22,19 @@ All notable changes to the public cluster page.
   recomputes the headline totals from the monthly tables and fails on any mismatch.
   Fails closed on unreadable input. Fixture-tested (12 assertions) and run against the
   real Task-1 output (exit 0).
+
+- **Public page: static zero-JS showcase** (2026-08-31, `build_cluster_page.R`,
+  `scripts/test_page.mjs`): assembles `index.html` from `output/cluster_data.json` by
+  R string concatenation only -- zero `<script>` anywhere, one light theme (no
+  `data-theme`, no `localStorage`, no `prefers-color-scheme`), tooltips are `title=`
+  attributes. Renders the header lockup (plate + school name), a headline band
+  (cores / GPUs / core-hours / GPU-hours / jobs), one hardware section per pool (one
+  card per hardware type with a row of node-count squares; CPU model codes render
+  human-readably, e.g. `Gold-6242` -> "Xeon Gold 6242"), and a delivered section with
+  two charts -- one bar per month, summed across node-class/card -- and sparse
+  January-plus-first-month axis labels. Assets (plate, FCDS signature, both Whitney
+  weights) are read from the sibling clone and embedded base64, never copied into the
+  tree. Fixture-tested against the real Task-1 output (27 assertions covering
+  structure, containment, and the de-id blocklist) and run through `gate_cluster.mjs`
+  with the built page (exit 0). `index.html` is 218 KB, dominated by the embedded
+  assets.
