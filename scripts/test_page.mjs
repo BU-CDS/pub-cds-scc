@@ -383,5 +383,17 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
   not(footerBlock, 'updated quarterly', 'the footer no longer carries the data stamp (moved to livewrap)');
 }
 
+// ---- 16. livewrap must not double-pad (maintainer round 11): it is nested
+// inside <main>, which already applies the 98vw max-width and content-pad,
+// so .livewrap itself must carry neither -- only the portals' top-level
+// .livewrap needs its own gutter ----
+has(styleBlock, '.livewrap{margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;}', '.livewrap uses the no-double-pad rule (nested under main, not top-level like the portals\')');
+{
+  const livewrapRule = (styleBlock.match(/\.livewrap\{[^}]*\}/) || [''])[0];
+  (!livewrapRule.includes('var(--content-pad)') && !livewrapRule.includes('max-width'))
+    ? ok('.livewrap carries neither var(--content-pad) nor max-width (main already applies both)')
+    : bad('.livewrap still double-pads: ' + livewrapRule);
+}
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);

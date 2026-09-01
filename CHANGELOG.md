@@ -19,7 +19,11 @@ All notable changes to the public cluster page.
   deckrow -- text unchanged, only relocated. `.pagefoot` keeps this page's own
   `98vw` gutter and sticky-footer `margin-top:auto` in place of the portals'
   fixed top margin; everything else in the footer CSS is verbatim portal.
-  Fixture-tested (RED against the pre-round page, GREEN after rebuild, 135/135
+  `.livewrap` itself carries neither `max-width` nor `var(--content-pad)` --
+  unlike the portals, where `.livewrap` is a top-level element, here it is
+  nested inside `<main>`, which already applies both, so its own copy would
+  have double-padded the stamp text inside the deck's outer edge.
+  Fixture-tested (RED against the pre-round page, GREEN after rebuild, 137/137
   total assertions) and run through the full staged pipeline including
   `gate_cluster.mjs` over the built HTML (both external URLs pass the de-id
   blocklist) and `scripts/test_deploy.sh` (12/12, stamp text unchanged).
