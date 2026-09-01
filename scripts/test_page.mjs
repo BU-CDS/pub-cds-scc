@@ -262,7 +262,8 @@ has(html, '<meta name="viewport"', 'viewport meta present');
 // 4-column KPI grid, deck-titled h3s, and a slim centered period strip ----
 const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
 has(styleBlock, '.deck h3{', 'deck titles (GPU/CPU Pool, GPU/CPU Totals) get their own h3 rule');
-has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(4,1fr)', 'KPI cards use a 4-column grid so both cards align tile-for-tile');
+has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(2,1fr)', 'KPI cards use a 2-column grid (portals\' own 2-across layout, no label wraps)');
+has(styleBlock, '.kpi .kl{font-size:0.688rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;white-space:nowrap', 'KPI tile labels never wrap (.kl gets white-space:nowrap)');
 has(styleBlock, '.pool-gpu h3,#gpucard h3{border-color:#baf72e', 'GPU panel + totals titles carry the chartreuse pool-accent rule line');
 has(styleBlock, '.pool-cpu h3,#cpucard h3{border-color:#4cc9db', 'CPU panel + totals titles carry the cyan pool-accent rule line');
 not(styleBlock, 'h2{', 'the unused h2 rule was removed (dead CSS -- no <h2> in the markup)');
@@ -296,7 +297,7 @@ has(styleBlock, '.pool-cpu{--lblw:130px;--valw:64px', 'CPU panel keeps its wider
 
 // ---- 13. sticky footer + wide-screen growth (maintainer round 6) ----
 has(styleBlock, 'body{display:flex;flex-direction:column', 'body is a flex column (sticky-footer pattern)');
-has(styleBlock, 'main{max-width:min(var(--content-max),96vw);margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto', 'main grows to fill the flex column (flex:1 0 auto)');
+has(styleBlock, 'main{max-width:min(var(--content-max),98vw);margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto', 'main grows to fill the flex column (flex:1 0 auto)');
 has(styleBlock, 'margin-top:auto', 'the footer is pushed to the bottom on tall/short pages (margin-top:auto)');
 {
   const bodyIdx = html.indexOf('<body');
@@ -309,8 +310,16 @@ has(styleBlock, 'margin-top:auto', 'the footer is pushed to the bottom on tall/s
 }
 has(styleBlock, '@media(min-width:1700px){.pool-cpu{--core-s:clamp(8px,0.5vw,12px)', 'wide-screen (>=1700px) media block retunes --core-s for bigger units on desktops');
 has(styleBlock, '.pool-gpu{--gpu-w:clamp(22px,1.4vw,40px);--gpu-h:clamp(11px,0.7vw,20px)', 'wide-screen media block retunes --gpu-w/--gpu-h');
-has(styleBlock, '.deck{padding:14px 16px', 'wide-screen media block gives decks slightly airier padding');
+has(styleBlock, '.deck{padding:13px 14px', 'wide-screen media block gives decks slightly airier padding');
 has(styleBlock, '.kpi .kn{font-size:1.3rem', 'wide-screen media block gives KPI numbers a larger font');
+
+// ---- 14. tighter page margins (maintainer round 7): 96vw -> 98vw, content-pad
+// 20px -> 12px, deck padding tightened to match ----
+has(styleBlock, '--content-max:2100px;--content-pad:12px', 'content-pad is tightened to 12px');
+has(styleBlock, 'main{max-width:min(var(--content-max),98vw)', 'main uses the wider 98vw outer gutter');
+has(styleBlock, '.hwrap{max-width:min(var(--content-max),98vw)', 'the header lockup (.hwrap) uses the wider 98vw outer gutter (stays aligned with the decks)');
+has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw)', 'the footer (.pagefoot) uses the wider 98vw outer gutter (stays aligned with the decks)');
+has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px', 'deck padding is tightened to 11px 12px below the wide-screen breakpoint');
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
