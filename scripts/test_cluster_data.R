@@ -113,7 +113,9 @@ gpu_inv <- data.frame(
 
 # ---- build one fixture root + run 50_cluster_data.R against it --------
 make_fixture <- function(cpu_meta_over = list(), gpu_meta_over = list(),
-                          cpu_cols = CPU_FCOLS, gpu_cols = GPU_FCOLS) {
+                          cpu_cols = CPU_FCOLS, gpu_cols = GPU_FCOLS,
+                          cpu_rows_in = cpu_rows, gpu_rows_in = gpu_rows,
+                          cpu_months = months3, gpu_months = months3) {
   fx <- tempfile("cluster_data_fixture_")
   dir.create(file.path(fx, "scripts"), recursive = TRUE)
   file.copy(SCRIPT, file.path(fx, "scripts", "50_cluster_data.R"))
@@ -122,9 +124,9 @@ make_fixture <- function(cpu_meta_over = list(), gpu_meta_over = list(),
   dir.create(file.path(cpu_dir, "config"), recursive = TRUE)
   dir.create(file.path(gpu_dir, "output"), recursive = TRUE)
   dir.create(file.path(gpu_dir, "config"), recursive = TRUE)
-  writeLines(toJSON(build_cpu_json(cpu_rows, meta_over = cpu_meta_over, cols = cpu_cols), auto_unbox = TRUE),
+  writeLines(toJSON(build_cpu_json(cpu_rows_in, months = cpu_months, meta_over = cpu_meta_over, cols = cpu_cols), auto_unbox = TRUE),
              file.path(cpu_dir, "output", "portal_data.json"))
-  writeLines(toJSON(build_gpu_json(gpu_rows, meta_over = gpu_meta_over, cols = gpu_cols), auto_unbox = TRUE),
+  writeLines(toJSON(build_gpu_json(gpu_rows_in, months = gpu_months, meta_over = gpu_meta_over, cols = gpu_cols), auto_unbox = TRUE),
              file.path(gpu_dir, "output", "public_data.json"))
   write.csv(cpu_inv, file.path(cpu_dir, "config", "cds_cpu_inventory.csv"), row.names = FALSE, quote = FALSE)
   write.csv(gpu_inv, file.path(gpu_dir, "config", "gpu_inventory_history.csv"), row.names = FALSE, quote = FALSE)
@@ -297,5 +299,28 @@ f5 <- make_fixture(gpu_cols = setdiff(GPU_FCOLS, "kwh"))
 r5 <- run_script(f5)
 stopifnot("GPU input missing required column kwh must make the script stop() (nonzero exit)" = r5$status != 0)
 pass("GPU input missing a required v2 column (kwh) is refused (fail closed)")
+
+# =====================================================================
+# 6) window3 must end at the calendar month just closed, not merely
+#    whatever the two emits happen to agree on. A GPU input whose own
+#    history stops one extra month early (newest common month = 2 months
+#    back, not 1) must stop(); the normal case -- newest common month is
+#    1 month back, the happy path above (f1/r1) -- must pass.
+# =====================================================================
+gpu_lag_rows <- data.frame(
+  p = c(prev2, prev2), card = c("H200", "L40S"),
+  held = c(300, 200), real = c(250, 150), residle_h = c(10, 8), kwh = c(500, 300),
+  vram_h = c(280, 180), fail_h = c(5, 3), wkill_h = c(2, 1), njobs = c(20, 10),
+  stringsAsFactors = FALSE
+)
+f6 <- make_fixture(gpu_rows_in = gpu_lag_rows, gpu_months = c(prev2, cur))
+r6 <- run_script(f6)
+stopifnot("GPU input whose newest common month is 2 months back must stop() (window3 lag guard)" =
+            r6$status != 0 && grepl("window3 lag", r6$output))
+pass("window3 ending 2 months back (not the month just closed) is refused, naming both months")
+
+stopifnot("happy-path fixture (newest common month = 1 month back, the month just closed) must pass the window3 lag guard" =
+            r1$status == 0)
+pass("window3 ending at the month just closed (1 month back) passes the lag guard")
 
 cat("\nALL TESTS PASSED\n")
