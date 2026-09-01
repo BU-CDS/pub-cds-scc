@@ -666,8 +666,6 @@ $('#pmonth').addEventListener('change',()=>{
   SEGS.forEach(([s])=>$(s).classList.remove('on'));
   applyWindow(windowFor(v),keyFor(v));
 });
-// ---- Over time (R6.7): tabs, period highlight, gentle auto-advance. The charts
-// are server-rendered; nothing here recomputes a number. ----
 const OV_ORDER=['vol','rhy','com'];
 const ovTabs=[...document.querySelectorAll('#ovtabs button')],ovSlides=[...document.querySelectorAll('.ov .slide')];
 let ovCur=0,ovTimer=null,ovStopped=false;
