@@ -304,7 +304,7 @@ stopifnot("headline$gpu_h must sum the complete gpu months in window3" = as.nume
 stopifnot("headline$jobs must be cpu+gpu njobs over window3" = as.numeric(out$headline$jobs) == 78)
 pass("headline sums cpu+gpu held/njobs over window3")
 
-# ---- contract v3 (happy path): meta.contract, community, capacity_monthly, added_12m ----
+# ---- contract v4 (happy path): meta.contract, community, capacity_monthly, added_12m ----
 stopifnot("meta.contract must be 4" = as.numeric(out$meta$contract) == 4)
 pass("meta.contract == 4")
 
