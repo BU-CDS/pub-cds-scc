@@ -34,7 +34,7 @@ writeFileSync(join(gpuDir, 'config', 'gpu_inventory_history.csv'),
 writeFileSync(join(gpuDir, 'config', 'cds_gpu_hosts.csv'),
   'host,gpu_type,gpus,gpu_mem_gb\nscc-gfix1,H200,2,144\n');
 
-// ---- a clean cluster_data.json fixture, shaped like the real Task-7 (v2) output --
+// ---- a clean cluster_data.json fixture, shaped like the real contract v2 output --
 // cpu_monthly row: [month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h]
 // gpu_monthly row: [month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs]
 const goodData = {

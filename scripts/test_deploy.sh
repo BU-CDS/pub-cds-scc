@@ -74,7 +74,7 @@ if git -C "$R" show page:CNAME 2>/dev/null | grep -qx "example.org"; then
 else bad "PORTAL_PUBLIC_DOMAIN did not reach CNAME"; fi
 
 # guard: an inline <script> is accepted (the zero-JS rule is dead; the real
-# page ships exactly one inline script per Task 8)
+# page ships exactly one inline script)
 T5="$WORK/t5"; mkrepo "$T5"
 printf '<html><script>console.log(1)</script>updated quarterly &middot; 2026-08-31</html>\n' > "$T5/index.html"
 ( cd "$T5" && DEPLOY_PUSH=0 ./deploy.sh ) >/dev/null 2>&1 \
