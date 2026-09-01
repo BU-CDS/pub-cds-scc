@@ -294,5 +294,23 @@ has(styleBlock, '.hwcols,.hwrow{display:grid;grid-template-columns:var(--lblw) v
 has(styleBlock, '.pool-gpu{--lblw:80px;--valw:56px', 'GPU panel gets snug columns sized to its longest label/value ("RTXP6000" / "144 GB")');
 has(styleBlock, '.pool-cpu{--lblw:130px;--valw:64px', 'CPU panel keeps its wider columns sized to its longest label/value ("Xeon E5-2660\\u00a0v3" / "32 cores")');
 
+// ---- 13. sticky footer + wide-screen growth (maintainer round 6) ----
+has(styleBlock, 'body{display:flex;flex-direction:column', 'body is a flex column (sticky-footer pattern)');
+has(styleBlock, 'main{max-width:min(var(--content-max),96vw);margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto', 'main grows to fill the flex column (flex:1 0 auto)');
+has(styleBlock, 'margin-top:auto', 'the footer is pushed to the bottom on tall/short pages (margin-top:auto)');
+{
+  const bodyIdx = html.indexOf('<body');
+  const headerIdx = html.indexOf('<header');
+  const mainIdx = html.indexOf('<main>');
+  const footerIdx = html.indexOf('<footer');
+  (bodyIdx >= 0 && bodyIdx < headerIdx && headerIdx < mainIdx && mainIdx < footerIdx)
+    ? ok('header, main, footer are direct children of body in that order')
+    : bad('header/main/footer are not in the expected body order');
+}
+has(styleBlock, '@media(min-width:1700px){.pool-cpu{--core-s:clamp(8px,0.5vw,12px)', 'wide-screen (>=1700px) media block retunes --core-s for bigger units on desktops');
+has(styleBlock, '.pool-gpu{--gpu-w:clamp(22px,1.4vw,40px);--gpu-h:clamp(11px,0.7vw,20px)', 'wide-screen media block retunes --gpu-w/--gpu-h');
+has(styleBlock, '.deck{padding:14px 16px', 'wide-screen media block gives decks slightly airier padding');
+has(styleBlock, '.kpi .kn{font-size:1.3rem', 'wide-screen media block gives KPI numbers a larger font');
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);

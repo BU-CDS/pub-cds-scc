@@ -219,10 +219,10 @@ r"-----(") format("woff2");}
 @font-face{font-family:"Whitney SSm A";font-weight:400;font-style:normal;font-display:swap;src:url(")-----",
 font_uri_book,
 r"-----(") format("woff2");}
-*{box-sizing:border-box}html{font-size:110%;}body{font-family:var(--t-sans);color:var(--text);margin:0;background:var(--bg);font-size:0.813rem;line-height:1.45;-webkit-font-smoothing:antialiased;}
+*{box-sizing:border-box}html{font-size:110%;}html,body{height:100%;}body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;font-family:var(--t-sans);color:var(--text);margin:0;background:var(--bg);font-size:0.813rem;line-height:1.45;-webkit-font-smoothing:antialiased;}
 header{background:var(--headbg);color:var(--headfg);padding:12px var(--content-pad);position:relative;border-top:3px solid #cc0000;border-bottom:1px solid rgba(255,255,255,.08);}header h1{font-size:1rem;margin:0;font-weight:600;letter-spacing:-.01em;font-family:"Whitney SSm A",var(--t-sans);}.buplate{height:1.615em;vertical-align:-.449em;margin-right:.34em;}.orgname{font-weight:400;letter-spacing:0;}.hsep{color:rgba(255,255,255,.4);font-weight:400;padding:0 .6em;}
 .hwrap{max-width:min(var(--content-max),96vw);margin:0 auto;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;}
-main{max-width:min(var(--content-max),96vw);margin:0 auto;padding:14px var(--content-pad) 60px;}
+main{max-width:min(var(--content-max),96vw);margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto;}
 h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .deck{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 13px;margin-bottom:12px;box-shadow:0 1px 3px var(--shadow);}
 .deck h3{font-size:0.8rem;font-weight:700;color:var(--ink);margin:0 0 8px;}
@@ -243,11 +243,12 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 .hwnodes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
 .pool-cpu{--lblw:130px;--valw:64px;--core-s:clamp(5px,0.35vw,12px);}.pool-cpu .cnode{display:grid;grid-template-columns:repeat(8,var(--core-s));gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-cpu .cnode i{width:var(--core-s);height:var(--core-s);border-radius:3px;display:block;background:var(--idle);}.pool-cpu .cnode i.on{background:var(--used);}
 .pool-gpu{--lblw:80px;--valw:56px;--gpu-w:clamp(13px,0.93vw,40px);--gpu-h:clamp(10px,0.47vw,20px);}.pool-gpu .cnode{display:inline-flex;gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-gpu .cnode i{width:var(--gpu-w);height:var(--gpu-h);border-radius:4px;display:block;background:var(--idle);}.pool-gpu .cnode i.on{background:var(--used);}
+@media(min-width:1700px){.pool-cpu{--core-s:clamp(8px,0.5vw,12px);}.pool-gpu{--gpu-w:clamp(22px,1.4vw,40px);--gpu-h:clamp(11px,0.7vw,20px);}.deck{padding:14px 16px;}.kpi .kn{font-size:1.3rem;}}
 [data-tip]{cursor:help;}
 #tip{position:fixed;z-index:99;max-width:300px;background:#0f1f3a;color:#eaf1fb;font-size:0.719rem;line-height:1.45;padding:7px 10px;border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,.28);pointer-events:none;display:none;}#tip b{color:#9ec5ff;font-weight:600;}
 .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 18px;margin:0;}.kpi .k{padding:0;}
 .kpi .kn{font-size:1.188rem;font-weight:bold;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.15;}.kpi .kl{font-size:0.688rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;}.kpi .k[data-tip]{cursor:help;}
-.pagefoot{max-width:min(var(--content-max),96vw);margin:20px auto 0;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.pagefoot{max-width:min(var(--content-max),96vw);margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .ft-emblem{height:30px;width:auto;display:block;}
 .ft-text{color:var(--muted);font-size:0.75rem;}
 </style></head><body>
