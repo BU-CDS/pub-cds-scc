@@ -1,17 +1,18 @@
 #!/bin/bash -l
 # (login shell: sources /etc/profile so Lmod's 'module' is defined under cron)
 # refresh_public.sh — regenerate + publish the CDS public cluster page (the
-# CPU + GPU buy-in pool showcase). Monthly pipeline: strip+combine the sibling
+# CPU + GPU buy-in pool showcase). Quarterly pipeline: strip+combine the sibling
 # emits -> de-id gate -> build the portal-lift page (twin pool panels, period
 # selector, per-pool KPI totals; inline JS) -> structure test -> DOM-shim JS
 # execution check -> de-id gate again over the built page -> publish (deploy.sh).
 #
-# Idempotent + flock-guarded (overlapping runs skip the lock, they don't
-# clobber output/index.html) + logged. Local-only: output/, index.html,
-# refresh.log, .alert/, .refresh.lock, config/alert_email are gitignored.
-# DEPLOY_PUSH=0 runs the whole pipeline but skips the publish step (Task 5's
-# staged review; test_deploy.sh exercises deploy.sh's own DEPLOY_PUSH=0
-# stage-without-push path directly).
+# Idempotent + flock-guarded (overlapping runs wait for the lock rather than
+# skip it, so they don't clobber output/index.html) + logged. Local-only:
+# output/, index.html, refresh.log, .alert/, .refresh.lock, config/alert_email
+# are gitignored. DEPLOY_PUSH=0 runs the whole pipeline and reaches deploy.sh
+# same as any other run, but stages the page commit locally without pushing
+# (deploy.sh's own DEPLOY_PUSH guard); test_deploy.sh exercises that
+# stage-without-push path directly.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -74,7 +75,7 @@ fail(){ log "FAILED: $*"
 run(){ log "run $*"; "$@" >>"$LOG" 2>&1 || fail "$*"; }
 
 # --- the lock --------------------------------------------------------------
-# Monthly cron: one attempt, so a wedge should wait rather than skip -- a skip
+# Quarterly cron: one attempt, so a wedge should wait rather than skip -- a skip
 # here costs a month, not a tick.
 acquire_lock(){
   exec 9>"$LOCK"
@@ -97,11 +98,11 @@ run node "$S/test_page.mjs" "$ROOT/index.html"                       # structure
 run node "$ROOT/validate.mjs" "$ROOT/index.html"                     # DOM-shim: the page's inline JS must execute cleanly
 run node "$S/gate_cluster.mjs" "$ROOT/output/cluster_data.json" "$ROOT/index.html"   # de-id gate: page too
 
+log "deploy"
+run "$ROOT/deploy.sh"                                                # stages always; pushes only when DEPLOY_PUSH=1 (deploy.sh's own guard)
 if [ "${DEPLOY_PUSH:-1}" = 1 ]; then
-  log "deploy"
-  run "$ROOT/deploy.sh"
-  clear_alert deploy "page publish"
+  clear_alert refresh "public cluster page refresh"
 else
-  log "deploy skipped (DEPLOY_PUSH=0)"
+  log "deploy staged locally (DEPLOY_PUSH=0, not pushed)"
 fi
 log "done"
