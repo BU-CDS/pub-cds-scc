@@ -4,6 +4,26 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Public page: footer mirrors the portal footers; data stamp moves to a
+  status line** (2026-08-31, `build_cluster_page.R`, `scripts/test_page.mjs`):
+  the footer is now the same three-zone layout as `gpu-cds-scc`/`cpu-cds-scc`
+  (emblem left, GitHub mark center, Privacy Statement right) instead of a
+  single emblem + text stamp. Since this page has no theme, the portals'
+  light/dark emblem pair collapses to one `<img class="ft-emblem">`, and since
+  it has no codenames, the portals' `#poke` toggle is omitted entirely; the
+  GitHub link points at this repo's own public mirror
+  (`https://github.com/BU-CDS/pub-cds-scc`). The "Data from SGE accounting and
+  gpustats · updated quarterly · `<date>`" stamp `deploy.sh` still greps for
+  moves out of the footer into the portals' own public-mode status line
+  (`.livewrap`/`.liveupd`) directly under the header, ahead of the first
+  deckrow -- text unchanged, only relocated. `.pagefoot` keeps this page's own
+  `98vw` gutter and sticky-footer `margin-top:auto` in place of the portals'
+  fixed top margin; everything else in the footer CSS is verbatim portal.
+  Fixture-tested (RED against the pre-round page, GREEN after rebuild, 135/135
+  total assertions) and run through the full staged pipeline including
+  `gate_cluster.mjs` over the built HTML (both external URLs pass the de-id
+  blocklist) and `scripts/test_deploy.sh` (12/12, stamp text unchanged).
+
 - **Ops: monthly refresh + page-branch deploy** (2026-08-31, `refresh_public.sh`,
   `deploy.sh`, `scripts/test_deploy.sh`): `refresh_public.sh` runs the pipeline
   end to end -- strip+combine, de-id gate, build, structure test, de-id gate

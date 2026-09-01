@@ -248,14 +248,26 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 #tip{position:fixed;z-index:99;max-width:300px;background:#0f1f3a;color:#eaf1fb;font-size:0.719rem;line-height:1.45;padding:7px 10px;border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,.28);pointer-events:none;display:none;}#tip b{color:#9ec5ff;font-weight:600;}
 .kpi{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 18px;margin:0;}.kpi .k{padding:0;}
 .kpi .kn{font-size:1.188rem;font-weight:bold;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.15;}.kpi .kl{font-size:0.688rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;white-space:nowrap;}.kpi .k[data-tip]{cursor:help;}
-.pagefoot{max-width:min(var(--content-max),98vw);margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.livewrap{max-width:min(var(--content-max),98vw);margin:0 auto 10px;padding:0 var(--content-pad);display:flex;flex-wrap:wrap;gap:16px;align-items:center;}
+.liveupd{color:var(--text);font-size:0.75rem;white-space:nowrap;}
+.pagefoot{max-width:min(var(--content-max),98vw);margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;}
+.pagefoot .ft-l{flex:1 1 200px;display:flex;align-items:center;}
+.pagefoot .ft-c{flex:0 0 auto;text-align:center;}
+.pagefoot .ft-r{flex:1 1 200px;text-align:right;}
 .ft-emblem{height:30px;width:auto;display:block;}
-.ft-text{color:var(--muted);font-size:0.75rem;}
+.ft-link{color:var(--muted);font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;}
+.ft-link:hover{color:var(--used);text-decoration:underline;}
+.ft-gh{color:var(--muted);}
+.ft-gh:hover{color:var(--used);}
+.ft-gh svg{height:30px;width:auto;display:block;}
 </style></head><body>
 <header><div class="hwrap"><h1><img class="buplate" src=")-----",
 plate_uri,
 r"-----(" alt="Boston University"><span class="orgname">Faculty of Computing &amp; Data Sciences</span><span class="hsep">|</span>Research Computing at CDS</h1></div></header>
 <main>
+<div class="livewrap"><span class="liveupd">Data from SGE accounting and gpustats · updated quarterly · )-----",
+d$meta$updated,
+r"-----(</span></div>
 <div class="deckrow">
 <div class="deck pool-gpu" id="gpupanel"><h3>GPU Pool</h3>)-----",
 gpu_panel,
@@ -284,11 +296,9 @@ default_cpu_kpi,
 r"-----(</div></div>
 </div>
 </main>
-<footer class="pagefoot"><img class="ft-emblem" src=")-----",
+<footer class="pagefoot"><div class="ft-l"><img class="ft-emblem" src=")-----",
 emblem_uri,
-r"-----(" alt="Boston University Faculty of Computing &amp; Data Sciences"><span class="ft-text">Data from SGE accounting and gpustats · updated quarterly · )-----",
-d$meta$updated,
-r"-----(</span></footer>
+r"-----(" alt="Boston University Faculty of Computing &amp; Data Sciences"></div><div class="ft-c"><a class="ft-link ft-gh" href="https://github.com/BU-CDS/pub-cds-scc" target="_blank" rel="noopener" aria-label="GitHub repository" title="GitHub repository"><svg viewBox="0 0 16 16" width="19" height="19" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg></a></div><div class="ft-r"><a class="ft-link" href="https://www.bu.edu/policies/digital-privacy-statement/" target="_blank" rel="noopener">Privacy Statement</a></div></footer>
 <script>
 const DATA = )-----",
 data_json,

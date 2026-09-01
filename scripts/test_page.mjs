@@ -321,5 +321,67 @@ has(styleBlock, '.hwrap{max-width:min(var(--content-max),98vw)', 'the header loc
 has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw)', 'the footer (.pagefoot) uses the wider 98vw outer gutter (stays aligned with the decks)');
 has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px', 'deck padding is tightened to 11px 12px below the wide-screen breakpoint');
 
+// ---- 15. footer mirrors the portals (maintainer round 10) ----
+{
+  const footerStart = html.indexOf('<footer class="pagefoot"');
+  const footerEnd = html.indexOf('</footer>', footerStart) + '</footer>'.length;
+  const footerBlock = footerStart >= 0 ? html.slice(footerStart, footerEnd) : '';
+
+  P('div.ft-l') === 'footer.pagefoot' ? ok('.ft-l sits inside <footer class="pagefoot">') : bad('.ft-l parent is ' + P('div.ft-l'));
+  P('div.ft-c') === 'footer.pagefoot' ? ok('.ft-c sits inside <footer class="pagefoot">') : bad('.ft-c parent is ' + P('div.ft-c'));
+  P('div.ft-r') === 'footer.pagefoot' ? ok('.ft-r sits inside <footer class="pagefoot">') : bad('.ft-r parent is ' + P('div.ft-r'));
+  (footerBlock.indexOf('class="ft-l"') >= 0 && footerBlock.indexOf('class="ft-l"') < footerBlock.indexOf('class="ft-c"') && footerBlock.indexOf('class="ft-c"') < footerBlock.indexOf('class="ft-r"'))
+    ? ok('footer zones appear in order: ft-l, ft-c, ft-r')
+    : bad('footer zones are not in ft-l/ft-c/ft-r order');
+
+  (footerBlock.match(/class="ft-emblem"/g) || []).length === 1
+    ? ok('exactly one .ft-emblem image in the footer (single emblem, no theme pair)')
+    : bad('footer does not have exactly one .ft-emblem image');
+  for (const needle of ['ft-light', 'ft-dark', 'id="poke"', 'ft-m'])
+    not(html, needle, 'no "' + needle + '" anywhere (no theme pair, no codename toggle)');
+
+  const ftGh = (footerBlock.match(/<a class="ft-link ft-gh"[^>]*>/) || [''])[0];
+  has(ftGh, 'href="https://github.com/BU-CDS/pub-cds-scc"', '.ft-gh anchor points at this page\'s own public repo');
+  has(ftGh, 'target="_blank"', '.ft-gh anchor opens in a new tab');
+  has(ftGh, 'rel="noopener"', '.ft-gh anchor carries rel="noopener"');
+  has(ftGh, 'aria-label="GitHub repository"', '.ft-gh anchor carries an aria-label');
+  (footerBlock.match(/<svg viewBox="0 0 16 16"/g) || []).length === 1
+    ? ok('.ft-gh contains exactly one <svg viewBox="0 0 16 16"> (the GitHub mark)')
+    : bad('.ft-gh does not contain exactly one GitHub-mark svg');
+
+  const ftR = (footerBlock.match(/<div class="ft-r">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  has(ftR, 'href="https://www.bu.edu/policies/digital-privacy-statement/"', '.ft-r anchor links to the BU Privacy Statement');
+  has(ftR, 'rel="noopener"', '.ft-r anchor carries rel="noopener"');
+  has(ftR, '>Privacy Statement<', '.ft-r anchor reads "Privacy Statement"');
+
+  const FOOTER_CSS_RULES = [
+    '.pagefoot{max-width:min(var(--content-max),98vw);margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;}',
+    '.pagefoot .ft-l{flex:1 1 200px;display:flex;align-items:center;}',
+    '.pagefoot .ft-c{flex:0 0 auto;text-align:center;}',
+    '.pagefoot .ft-r{flex:1 1 200px;text-align:right;}',
+    '.ft-emblem{height:30px;width:auto;display:block;}',
+    '.ft-link{color:var(--muted);font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;}',
+    '.ft-link:hover{color:var(--used);text-decoration:underline;}',
+    '.ft-gh{color:var(--muted);}',
+    '.ft-gh:hover{color:var(--used);}',
+    '.ft-gh svg{height:30px;width:auto;display:block;}',
+  ];
+  for (const rule of FOOTER_CSS_RULES) has(styleBlock, rule, 'footer CSS rule present verbatim: ' + rule.slice(0, 44) + (rule.length > 44 ? '...' : ''));
+  not(html, 'ft-text', '.ft-text is gone from both markup and CSS');
+
+  const LIVEWRAP_PREFIX = '<div class="livewrap"><span class="liveupd">Data from SGE accounting and gpustats · updated quarterly · ';
+  const livewrapCount = html.split(LIVEWRAP_PREFIX).length - 1;
+  livewrapCount === 1
+    ? ok('the livewrap status line occurs exactly once')
+    : bad('livewrap occurs ' + livewrapCount + ' times, want exactly 1');
+  const mainIdx = html.indexOf('<main>');
+  const livewrapIdx = html.indexOf(LIVEWRAP_PREFIX);
+  const firstDeckrowIdx = html.indexOf('<div class="deckrow">');
+  (mainIdx >= 0 && livewrapIdx > mainIdx && livewrapIdx < firstDeckrowIdx)
+    ? ok('livewrap sits between <main> and the first deckrow')
+    : bad('livewrap is not positioned between <main> and the first deckrow');
+  not(footerBlock, 'updated quarterly', 'the footer no longer carries the data stamp (moved to livewrap)');
+}
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
