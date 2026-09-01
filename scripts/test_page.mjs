@@ -98,10 +98,14 @@ const head1 = (html.match(/<h1>([\s\S]*?)<\/h1>/) || ['', ''])[1];
 has(head1, 'class="buplate"', 'h1 carries the University plate image');
 has(head1, 'Faculty of Computing &amp; Data Sciences', 'h1 carries the school name');
 
-// ---- 3. every panel block renders fully saturated: capacity, not occupancy ----
+// ---- 3. every PANEL block renders fully saturated: capacity, not occupancy.
+// Scoped to the two pool panels: the Over time charts further down also draw
+// <i> marks (bars, capacity tracks, gridlines, legend swatches) that are not
+// panel blocks. ----
 {
-  const totalBlocks = (html.match(/<i\b[^>]*><\/i>/g) || []).length;
-  const onBlocks = (html.match(/<i class="on"><\/i>/g) || []).length;
+  const panels = html.slice(html.indexOf('id="gpupanel"'), html.indexOf('id="sechead"'));
+  const totalBlocks = (panels.match(/<i\b[^>]*><\/i>/g) || []).length;
+  const onBlocks = (panels.match(/<i class="on"><\/i>/g) || []).length;
   totalBlocks > 0 && totalBlocks === onBlocks
     ? ok('every panel block is saturated (' + onBlocks + '/' + totalBlocks + ')')
     : bad('panel blocks not fully saturated: ' + onBlocks + ' of ' + totalBlocks + ' carry class="on"');
@@ -154,7 +158,7 @@ const sliceFrom = (startMarker, endMarkers) => {
   return html.slice(s, e);
 };
 const gpuCard = sliceFrom('id="gpucard"', ['id="cpucard"']);
-const cpuCard = sliceFrom('id="cpucard"', ['</main>']);
+const cpuCard = sliceFrom('id="cpucard"', ['id="ovhead"']);
 gpuCard && cpuCard ? ok('both KPI totals cards were located in the page') : bad('could not locate both KPI totals cards');
 has(gpuCard, 'GPU Totals', 'GPU card carries its "GPU Totals" heading');
 has(cpuCard, 'CPU Totals', 'CPU card carries its "CPU Totals" heading');
@@ -280,10 +284,20 @@ const COMMUNITY_TIPS = {
     '#prange': makeEl('prange'),
     '#gpu-cov': makeEl('gpu-cov'),
     '#cpu-cov': makeEl('cpu-cov'),
+    '#ovsel': makeEl('ovsel'),
   };
+  // Over time: the tabs, slides and highlightable columns the script discovers via querySelectorAll
+  const trackOn = (el) => { el.on = false; el.classList = { toggle: (c, v) => { if (c === 'on') el.on = !!v; }, add() {}, remove() {}, contains: () => false }; return el; };
+  const ovTabEls = ['vol', 'rhy', 'com'].map(s => { const el = trackOn(makeEl('ovtab-' + s, { dataset: { s } })); el.on = s === 'vol'; el.addEventListener = (ev, fn) => { if (ev === 'click') el.onclick = fn; }; return el; });
+  const ovSlideEls = ['gpu', 'cpu'].flatMap(pool => ['vol', 'rhy', 'com'].map(s => makeEl('slide-' + pool + '-' + s, { dataset: { s }, hidden: s !== 'vol' })));
+  const ovColEls = [...html.matchAll(/<span class="col(?: on)?" data-m="(\d{4}-\d{2})"/g)].map(m => trackOn(makeEl('col', { dataset: { m: m[1] } })));
+  const timers = [];
+  const setIntervalStub = (fn, ms) => { timers.push({ fn, ms, cleared: false }); return timers.length; };
+  const clearIntervalStub = (id) => { if (timers[id - 1]) timers[id - 1].cleared = true; };
+  const shown = () => [...new Set(ovSlideEls.filter(s => !s.hidden).map(s => s.dataset.s))];
   const document = {
     querySelector: (sel) => els[sel] || makeEl(sel.replace(/^[.#]/, '')),
-    querySelectorAll: () => [],
+    querySelectorAll: (sel) => sel === '#ovtabs button' ? ovTabEls : sel === '.ov .slide' ? ovSlideEls : sel === '.ov [data-m]' ? ovColEls : [],
     getElementById: (id) => els['#' + id] || makeEl(id),
     createElement: () => makeEl('tip'),
     addEventListener: () => {},
@@ -293,7 +307,7 @@ const COMMUNITY_TIPS = {
   const localStorage = { getItem: () => null, setItem() {} };
   try {
     if (!scripts.trim()) throw new Error('no <script> content found');
-    new Function('document', 'window', 'localStorage', scripts)(document, window, localStorage);
+    new Function('document', 'window', 'localStorage', 'setInterval', 'clearInterval', scripts)(document, window, localStorage, setIntervalStub, clearIntervalStub);
 
     // click "Past 3 months" (the default) explicitly: the JS recompute must
     // match the server-rendered default exactly, tile for tile (all 11 tiles)
@@ -368,6 +382,9 @@ const COMMUNITY_TIPS = {
     els['#prange'].textContent === expectAllRange
       ? ok('functional: clicking "All months" updates the range text correctly ("' + expectAllRange + '")')
       : bad('functional: range text after "All months" is "' + els['#prange'].textContent + '", expected "' + expectAllRange + '"');
+    ovColEls.length > 0 ? ok('functional: the page exposes highlightable chart columns (' + ovColEls.length + ')') : bad('functional: no <span class="col" data-m=…> columns found');
+    ovColEls.every(c => c.on) ? ok('functional: "All months" highlights every chart column') : bad('functional: "All months" left chart columns un-highlighted');
+    els['#ovsel'].textContent === expectAllRange ? ok('functional: "All months" writes the highlighted range into #ovsel') : bad('functional: #ovsel after "All months" is "' + els['#ovsel'].textContent + '"');
 
     // Coverage: GPU's own series (trailing) rarely covers the full union -- "All months"
     // should caption the GPU card with its actual coverage, while still rendering
@@ -417,6 +434,8 @@ const COMMUNITY_TIPS = {
     els['#prange'].textContent === expectMonthRange
       ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
       : bad('functional: range text after a single-month pick is "' + els['#prange'].textContent + '", expected "' + expectMonthRange + '"');
+    ovColEls.every(c => c.on === (c.dataset.m === singleMonth)) ? ok('functional: a single month highlights exactly the columns whose data-m is that month (monthly and weekly alike)') : bad('functional: single-month highlight set is wrong');
+    ovColEls.some(c => c.on) ? ok('functional: the single-month highlight is non-empty') : bad('functional: no column highlighted for ' + singleMonth);
 
     // Coverage: a month before GPU's own series began (CPU's earliest month) must
     // replace the GPU tiles with a "no data" message, not render misleading
@@ -429,8 +448,29 @@ const COMMUNITY_TIPS = {
       ? ok('functional: GPU coverage note stays empty when GPU has no data at all (the "no data" tile message carries it instead)')
       : bad('functional: GPU coverage note should be empty (not a caption) when GPU has zero data, got "' + els['#gpu-cov'].textContent + '"');
     has(els['#kpi-cpu'].innerHTML, 'Reserved core-h', 'functional: CPU tiles still render normally for its own earliest month');
+
+    // auto-advance (R6.7): one 10 s interval armed on load; each tick shows the next slide in BOTH decks; a tab click stops it for good
+    timers.length === 1 && timers[0].ms === 10000 ? ok('functional: auto-advance armed once with a 10 s interval') : bad('functional: expected one 10000 ms interval, got ' + JSON.stringify(timers.map(t => t.ms)));
+    JSON.stringify(shown()) === '["vol"]' ? ok('functional: Monthly volume is the only visible slide on load') : bad('functional: visible slides on load: ' + JSON.stringify(shown()));
+    timers[0].fn();
+    JSON.stringify(shown()) === '["rhy"]' && ovTabEls[1].on && !ovTabEls[0].on ? ok('functional: tick 1 shows Weekly rhythm in both decks and moves .on to its tab') : bad('functional: after tick 1 visible = ' + JSON.stringify(shown()));
+    timers[0].fn();
+    JSON.stringify(shown()) === '["com"]' ? ok('functional: tick 2 shows Researchers') : bad('functional: after tick 2 visible = ' + JSON.stringify(shown()));
+    timers[0].fn();
+    JSON.stringify(shown()) === '["vol"]' ? ok('functional: tick 3 wraps back to Monthly volume') : bad('functional: after tick 3 visible = ' + JSON.stringify(shown()));
+    ovTabEls[1].onclick({ target: ovTabEls[1] });
+    JSON.stringify(shown()) === '["rhy"]' && timers[0].cleared ? ok('functional: clicking a tab shows its slide and clears the auto-advance') : bad('functional: tab click did not show rhy / clear the interval');
   } catch (e) {
     bad('functional: page JS threw during simulated period-control interaction -- ' + (e && e.message ? e.message : e));
+  }
+  // prefers-reduced-motion: the script must not arm the interval at all
+  {
+    const timers2 = [];
+    const window2 = { addEventListener: () => {}, matchMedia: () => ({ matches: true, addEventListener() {} }) };
+    try {
+      new Function('document', 'window', 'localStorage', 'setInterval', 'clearInterval', scripts)(document, window2, localStorage, (fn, ms) => { timers2.push(ms); return 1; }, () => {});
+      timers2.length === 0 ? ok('functional: under prefers-reduced-motion no auto-advance interval is armed') : bad('functional: reduced-motion run armed ' + timers2.length + ' interval(s)');
+    } catch (e) { bad('functional: page JS threw under the reduced-motion shim -- ' + (e && e.message ? e.message : e)); }
   }
 }
 
@@ -728,6 +768,7 @@ const buildFixturePage = (mutator) => {
     return {
       gpuH3: (fGpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1],
       cpuH3: (fCpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1],
+      html: fixtureHtml,
     };
   } finally {
     try { rmSync(tmp, { recursive: true, force: true }); } catch {}
@@ -799,6 +840,121 @@ const buildFixturePage = (mutator) => {
   const leakedProjects = projectNames.filter((p) => html.includes(p));
   leakedUsers.length === 0 ? ok('no internal-emit user code appears anywhere in the page') : bad('user code(s) leaked into the page: ' + leakedUsers.length + ' hit(s)');
   leakedProjects.length === 0 ? ok('no internal-emit project name appears anywhere in the page') : bad('project name(s) leaked into the page: ' + leakedProjects.length + ' hit(s)');
+}
+
+// ---- 22. Over time (R6): header + tabs, two Activity decks, three server-rendered
+// slides each (vol visible, rhy/com hidden); columns, data-m, default highlight,
+// tooltips, hero and peak figures recomputed from cluster_data.json ----
+const compactJS = x => x >= 1e6 ? (x / 1e6).toFixed(2).replace(/\.?0+$/, '') + ' M' : x >= 1e3 ? Math.round(x / 1e3) + ' k' : fmt(x);
+const dayLabel = (iso) => { const d = new Date(iso + 'T00:00:00Z'); return d.getUTCDate() + ' ' + MON[d.getUTCMonth()] + ' ' + d.getUTCFullYear(); };
+const plusDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+const allUnionOv = [...new Set([...data.meta.months_cpu, ...data.meta.months_gpu])].sort();
+{
+  const ovheadStart = html.indexOf('id="ovhead"');
+  (ovheadStart > html.indexOf('id="cpucard"') && ovheadStart < html.indexOf('</main>')) ? ok('the Over time header follows the totals cards inside main') : bad('#ovhead is not between the totals cards and </main>');
+  P('div#ovhead.sechead') === 'main' ? ok('#ovhead is a direct child of main (flat, like the Totals header)') : bad('#ovhead parent is ' + P('div#ovhead.sechead'));
+  P('div#gpuov.deck.ov') === 'div.deckrow' ? ok('GPU Activity deck sits inside a deckrow') : bad('GPU Activity deck parent is ' + P('div#gpuov.deck.ov'));
+  P('div#cpuov.deck.ov') === 'div.deckrow' ? ok('CPU Activity deck sits inside a deckrow') : bad('CPU Activity deck parent is ' + P('div#cpuov.deck.ov'));
+  (html.indexOf('id="gpuov"') < html.indexOf('id="cpuov"')) ? ok('GPU Activity deck precedes the CPU deck') : bad('GPU Activity deck does not precede the CPU deck');
+  const ovhead = html.slice(ovheadStart, html.indexOf('<div class="deckrow">', ovheadStart));
+  const ovTtl = (ovhead.match(/class="ttl">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  has(ovTtl, 'Over time', '.ttl reads "Over time"');
+  has(ovTtl, rangeTextJS(allUnionOv) + ' · <span id="ovsel">', '.ttl states the full record range (union of both pools) before the highlighted range');
+  has(ovTtl, '<span id="ovsel">' + rangeTextJS(data.meta.window3) + '</span> highlighted', '.ttl server-renders the default (window3) highlighted range');
+  const ovCtl = ovhead.slice(ovhead.indexOf('class="ctl"'));
+  has(ovCtl, 'class="seg" id="ovtabs"', '.ctl carries the #ovtabs segmented bar');
+  has(ovCtl, '<button class="on" data-s="vol">Monthly volume</button>', 'Monthly volume tab is first and on by default');
+  has(ovCtl, '<button data-s="rhy">Weekly rhythm</button>', 'Weekly rhythm tab present');
+  has(ovCtl, '<button data-s="com">Researchers</button>', 'Researchers tab present');
+  (ovCtl.match(/<button\b/g) || []).length === 3 ? ok('exactly three slide tabs') : bad('slide tab count != 3');
+}
+const ovDeck = (pool) => pool === 'gpu' ? sliceFrom('id="gpuov"', ['id="cpuov"']) : sliceFrom('id="cpuov"', ['</main>']);
+const slideOf = (deck, s) => {
+  const a = deck.indexOf('<div class="slide" data-s="' + s + '"'); if (a < 0) return '';
+  const rest = deck.slice(a);
+  const nexts = ['vol', 'rhy', 'com'].filter(x => x !== s).map(x => rest.indexOf('<div class="slide" data-s="' + x + '"')).filter(i => i > 0);
+  return rest.slice(0, nexts.length ? Math.min(...nexts) : rest.length);
+};
+for (const pool of ['gpu', 'cpu']) {
+  const deck = ovDeck(pool), P_ = pool.toUpperCase();
+  const months = pool === 'gpu' ? data.meta.months_gpu : data.meta.months_cpu;
+  const unit = pool === 'gpu' ? 'GPU-h' : 'core-h', unitLong = pool === 'gpu' ? 'GPU-hours' : 'core-hours';
+  const weekly = data.weekly.filter(r => r[1] === pool).slice().sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  has(deck, '<h3>' + P_ + ' Activity</h3>', P_ + ' Activity deck heading');
+  const order = ['vol', 'rhy', 'com'].map(s => deck.indexOf('<div class="slide" data-s="' + s + '"'));
+  (order[0] >= 0 && order[0] < order[1] && order[1] < order[2]) ? ok(P_ + ': slides in the order vol, rhy, com') : bad(P_ + ': slides missing or out of order');
+  has(deck, '<div class="slide" data-s="rhy" hidden>', P_ + ': Weekly rhythm slide is hidden in the server render');
+  has(deck, '<div class="slide" data-s="com" hidden>', P_ + ': Researchers slide is hidden in the server render');
+  has(deck, '<div class="slide" data-s="vol"><div class="cap">', P_ + ': Monthly volume slide is visible in the server render');
+  const vol = slideOf(deck, 'vol'), rhy = slideOf(deck, 'rhy'), com = slideOf(deck, 'com');
+  const cols = (s) => [...s.matchAll(/<span class="col( on)?" data-m="(\d{4}-\d{2})" data-tip="/g)].map(m => ({ on: !!m[1], m: m[2] }));
+  const vc = cols(vol), rc = cols(rhy), cc = cols(com);
+  vc.length === months.length ? ok(P_ + ' vol: one column per published month (' + vc.length + ')') : bad(P_ + ' vol: ' + vc.length + ' columns, want ' + months.length);
+  rc.length === weekly.length ? ok(P_ + ' rhy: one column per weekly row (' + rc.length + ')') : bad(P_ + ' rhy: ' + rc.length + ' columns, want ' + weekly.length);
+  cc.length === months.length ? ok(P_ + ' com: one column per published month (' + cc.length + ')') : bad(P_ + ' com: ' + cc.length + ' columns, want ' + months.length);
+  (vc.every((c, i) => c.m === months[i]) && cc.every((c, i) => c.m === months[i])) ? ok(P_ + ': monthly columns carry data-m = the month, in order') : bad(P_ + ': monthly data-m sequence differs from months');
+  rc.every((c, i) => c.m === plusDays(weekly[i][0], 3).slice(0, 7)) ? ok(P_ + ' rhy: each week column carries data-m = the month of its Thursday') : bad(P_ + ' rhy: week data-m does not follow the Thursday rule');
+  [...vc, ...rc, ...cc].every(c => allUnionOv.includes(c.m)) ? ok(P_ + ': every data-m is a published month') : bad(P_ + ': a data-m lies outside the published months');
+  const w3 = new Set(data.meta.window3);
+  (vc.every(c => c.on === w3.has(c.m)) && cc.every(c => c.on === w3.has(c.m))) ? ok(P_ + ': default .on on monthly columns equals window3 exactly') : bad(P_ + ': default .on on monthly columns differs from window3');
+  rc.every(c => c.on === w3.has(c.m)) ? ok(P_ + ' rhy: default .on follows window3 via the Thursday month') : bad(P_ + ' rhy: default .on differs from window3');
+  for (const [name, s, n] of [['vol', vol, vc.length], ['rhy', rhy, rc.length], ['com', com, cc.length]]) {
+    (s.match(/data-tip="/g) || []).length === n ? ok(P_ + ' ' + name + ': every column has a tooltip and nothing else does') : bad(P_ + ' ' + name + ': tooltip count != column count');
+    (s.match(/<em class="pk"/g) || []).length === 1 ? ok(P_ + ' ' + name + ': exactly one peak label') : bad(P_ + ' ' + name + ': peak label count != 1');
+    const first = (s.match(/<div class="xax">.*?<span style="left:[\d.]+%">([^<]+)<\/span>/) || ['', ''])[1];
+    /\d{4}$/.test(first) ? ok(P_ + ' ' + name + ': first x label carries a year (' + first + ')') : bad(P_ + ' ' + name + ': first x label lacks a year: "' + first + '"');
+    const yax = (s.match(/<div class="yax">([\s\S]*?)<\/div>/) || ['', ''])[1];
+    const vals = [...yax.matchAll(/style="bottom:([\d.]+)%">([\d.]+)(k|M)?</g)].filter(m => m[1] !== '0').map(m => Number(m[2]) * (m[3] === 'M' ? 1e6 : m[3] === 'k' ? 1e3 : 1));
+    const diffs = vals.slice(1).map((v, i) => v - vals[i]);
+    (vals.length >= 3 && vals.length <= 5 && diffs.every(d => Math.abs(d - diffs[0]) < 1e-6)) ? ok(P_ + ' ' + name + ': 3-5 evenly spaced round y ticks (' + vals.join(',') + ')') : bad(P_ + ' ' + name + ': y ticks not 3-5 evenly spaced: ' + JSON.stringify(vals));
+  }
+  const heldByMonth = (m) => (pool === 'gpu' ? data.gpu_monthly : data.cpu_monthly).filter(r => r[0] === m).reduce((t, r) => t + r[2], 0);
+  const heldAll = months.reduce((t, m) => t + heldByMonth(m), 0);
+  has(vol, '<span class="hero"><b>' + compactJS(heldAll) + '</b>' + unitLong + ' reserved since ' + monthLbl(months[0], true) + '</span>', P_ + ' vol: hero = compact cumulative reserved hours since the first published month');
+  const peakM = months.reduce((a, m) => (heldByMonth(m) > heldByMonth(a) ? m : a), months[0]);
+  has(vol, '">' + fmt(heldByMonth(peakM)) + '</em>', P_ + ' vol: peak label = fmt(max monthly reserved)');
+  has(vol, 'Reserved ' + unitLong + ' by month<i>reserved (solid) against nominal capacity (faint)</i>', P_ + ' vol: title + subtitle verbatim');
+  has(vol, '<i class="trk" style="height:', P_ + ' vol: capacity track present');
+  has(vol, '&lt;b>' + monthLbl(peakM, true) + '&lt;/b>&lt;br>' + fmt(heldByMonth(peakM)) + ' ' + unit + ' reserved · ', P_ + ' vol: peak month tooltip carries month and reserved hours');
+  if (weekly.length) {
+    const peakW = weekly.reduce((a, r) => (r[2] > a[2] ? r : a), weekly[0]);
+    has(rhy, '<span class="hero"><b>' + fmt(peakW[2]) + '</b>' + unitLong + ' in the busiest week (' + dayLabel(peakW[0]) + ')</span>', P_ + ' rhy: hero = busiest week');
+    has(rhy, 'complete weeks, ' + dayLabel(weekly[0][0]) + ' – ' + dayLabel(plusDays(weekly[weekly.length - 1][0], 6)), P_ + ' rhy: subtitle spans first Monday – last Sunday');
+    has(rhy, '<div class="plot wk">', P_ + ' rhy: weekly plot carries the .wk class');
+    has(rhy, '&lt;b>Week of ' + dayLabel(weekly[0][0]) + '&lt;/b>&lt;br>' + fmt(weekly[0][2]) + ' ' + unit + ' reserved', P_ + ' rhy: first week tooltip');
+  } else bad(P_ + ' rhy: no weekly rows for this pool in cluster_data.json');
+  const all = communityFor('ALL', pool);
+  has(com, '<span class="hero"><b>' + fmt(all.users) + '</b>researchers · <b>' + fmt(all.groups) + '</b>research groups since ' + monthLbl(months[0], true) + '</span>', P_ + ' com: hero = distinct researchers/groups over the record');
+  has(com, '<span class="lg"><i class="u"></i>Researchers<i class="g"></i>Research groups</span>', P_ + ' com: legend present (two series)');
+  const peakU = months.reduce((a, m) => (communityFor('M:' + m, pool).users > communityFor('M:' + a, pool).users ? m : a), months[0]);
+  has(com, '">' + fmt(communityFor('M:' + peakU, pool).users) + '</em>', P_ + ' com: peak label = max monthly researchers');
+}
+has(styleBlock, '.slide[hidden]{display:none}', 'hidden slides are display:none explicitly');
+has(styleBlock, '#gpuov{flex:0 1 37%;}#cpuov{flex:1 1 0;}', 'Activity decks keep the 37%/63% split');
+has(styleBlock, '#gpuov h3{border-color:#baf72e;}', 'GPU Activity h3 carries the chartreuse accent');
+has(styleBlock, '#cpuov h3{border-color:#4cc9db;}', 'CPU Activity h3 carries the cyan accent');
+has(styleBlock, '.ov .slot,.ov .pair{position:relative;width:100%;max-width:24px;height:100%;}', 'columns are capped at 24px');
+has(styleBlock, '.ov .cols{position:absolute;inset:0;display:flex;align-items:flex-end;gap:2px;', 'adjacent columns keep a 2px surface gap');
+has(styleBlock, '.ov .wk .cols{gap:1px;}', 'weekly columns use a 1px gap');
+has(styleBlock, '.ov .bar{position:absolute;left:0;right:0;bottom:0;background:var(--used);border-radius:4px 4px 0 0;opacity:var(--dim);}', 'bars: teal, 4px rounded top, dimmed unless selected');
+has(styleBlock, '.ov .col.on .bar,.ov .col.on .pair i,.ov .col:hover .bar,.ov .col:hover .pair i{opacity:1;}', 'selected (and hovered) columns render at full opacity');
+has(styleBlock, '.ov .pair .g{background:var(--ember);}', 'research-groups bars use the ember hue');
+has(styleBlock, '.ov .grid i{position:absolute;left:0;right:0;border-top:1px solid var(--grid);}', 'gridlines are solid hairlines');
+has(html, "matchMedia('(prefers-reduced-motion: reduce)')", 'auto-advance consults prefers-reduced-motion');
+has(html, 'setInterval(', 'auto-advance uses a timer');
+not(html, 'prefers-color-scheme', 'still no theme machinery');
+
+// ---- 22b. fixture: a pool with no weekly rows renders "No <POOL> data" in place
+// of its rhythm plot (R6.6) ----
+{
+  try {
+    const { html: fh } = buildFixturePage((fixture) => { fixture.weekly = fixture.weekly.filter(r => r[1] !== 'gpu'); });
+    const fGpu = fh.slice(fh.indexOf('id="gpuov"'), fh.indexOf('id="cpuov"'));
+    has(fGpu, '<div class="nodata">No GPU data</div>', 'fixture (no GPU weekly rows): GPU rhythm slide shows "No GPU data"');
+    not(fGpu, '<div class="plot wk">', 'fixture (no GPU weekly rows): GPU rhythm slide draws no weekly plot');
+    const fCpu = fh.slice(fh.indexOf('id="cpuov"'), fh.indexOf('</main>'));
+    has(fCpu, '<div class="plot wk">', 'fixture (no GPU weekly rows): CPU rhythm plot unaffected');
+  } catch (e) { bad('fixture (no GPU weekly rows) rebuild failed: ' + (e && e.message ? e.message : e)); }
 }
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');

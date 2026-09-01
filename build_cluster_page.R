@@ -11,9 +11,13 @@
 # machinery -- lifted from cpu-cds-scc/build_cpu_portal.R (renderLive(),
 # its KPI card, TIPS, cpuLabel) and gpu-cds-scc/build_gpu_portal.R
 # (livePanel(), its KPI card, cardGB) as the read-only source of visual
-# truth. Neither sibling repo is written to.
+# truth. Neither sibling repo is written to. R6 (2026-09-01): an "Over
+# time" section under the totals -- three server-rendered slides per pool
+# (Monthly volume / Weekly rhythm / Researchers) as CSS bar columns; the
+# inline script only switches slides, toggles the period highlight and
+# runs a gentle auto-advance.
 #
-# Reads:  output/cluster_data.json          (contract v2, the strip+combine emit)
+# Reads:  output/cluster_data.json          (contract v4, the strip+combine emit)
 # Assets (base64-embedded, read from the sibling clone, never copied in):
 #   $PUB_CPU_CLONE/assets/bu_plate_white.png
 #   $PUB_CPU_CLONE/assets/faculty_compt_data_sci_signature_toptier_rgb.png
@@ -165,6 +169,7 @@ cm <- as_mat(d$cpu_monthly, 9)   # month,node_class,held_h,utilized_h,fail_h,wki
 gm <- as_mat(d$gpu_monthly, 10)  # month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs
 cmty <- as_mat(d$community, 4)         # window_key,pool,users,groups
 capm <- as_mat(d$capacity_monthly, 3)  # month,pool,cap_h
+wk <- as_mat(d$weekly, 3)   # monday,pool,held_h (contract v4)
 
 # R5.4 lookup/sum: community is looked up by window key (not re-summed --
 # contract v3 already precomputes each pool's distinct-count intersection with
@@ -269,6 +274,118 @@ all_months <- sort(unique(c(d$meta$months_cpu, d$meta$months_gpu)))
 month_opts <- paste(vapply(rev(all_months), function(m) sprintf('<option value="%s">%s</option>', m, month_label(m)), character(1)), collapse = "")
 month_select_options <- paste0('<option value="" selected>Month…</option>', month_opts)
 
+# ---- R6 "Over time": three server-rendered slides per pool. The inline script
+# never recomputes a chart -- it only switches slides, toggles the period
+# highlight (.col.on for data-m in the selected window) and runs the
+# auto-advance. Marks per R6.6: <= 24 px columns, 2 px surface gap (1 px
+# weekly), 4 px rounded tops, hairline grid, no text in a series colour. ----
+compact <- function(x) {   # 1.41 M / 261 k / 950 (R6.6)
+  x <- as.numeric(x)
+  if (x >= 1e6) return(paste0(sub("\\.?0+$", "", sprintf("%.2f", x / 1e6)), " M"))
+  if (x >= 1e3) return(paste0(jround(x / 1e3), " k"))
+  fmt(x)
+}
+tick_label <- function(x) {   # axis ticks: 150k / 1.2M (no space, one decimal)
+  if (x >= 1e6) return(paste0(sub("\\.0$", "", sprintf("%.1f", x / 1e6)), "M"))
+  if (x >= 1e3) return(paste0(jround(x / 1e3), "k"))
+  fmt(x)
+}
+nice_ticks <- function(mx) {   # top = 1.04 x max; the smallest step in {1,2,2.5,5}x10^n giving <= 5 lines below top
+  top <- max(mx, 1) * 1.04
+  p <- 10^floor(log10(top / 4))
+  cands <- c(1, 2, 2.5, 5, 10) * p
+  # "<= 5 lines below top" counts the actual rendered ticks (seq() stops at <= top,
+  # i.e. floor(top/step) of them) -- comparing the raw ratio to 5 instead rejects a
+  # step like 5000 for top=28254 (ratio 5.65) even though it renders exactly 5 ticks,
+  # skipping straight to a coarser step that renders only 2.
+  step <- cands[which(floor(top / cands) <= 5)[1]]
+  list(top = top, ticks = seq(step, top, by = step))
+}
+pc <- function(v, top) sprintf("%.2f", 100 * as.numeric(v) / top)   # heights/offsets as % of top, 2 dp
+day_label <- function(d) { d <- as.Date(d); paste(as.integer(format(d, "%d")), MON[as.integer(format(d, "%m"))], format(d, "%Y")) }
+QUARTER <- c(1L, 4L, 7L, 10L)
+
+ov_plot <- function(tk, cols, xax, cls = "") {
+  yax  <- paste0('<div class="yax">', paste(sprintf('<span style="bottom:%s%%">%s</span>', pc(tk$ticks, tk$top), vapply(tk$ticks, tick_label, character(1))), collapse = ""), '<span style="bottom:0">0</span></div>')
+  grid <- paste(sprintf('<i style="bottom:%s%%"></i>', pc(tk$ticks, tk$top)), collapse = "")
+  sprintf('<div class="plot%s">%s<div class="area"><div class="grid">%s</div><div class="cols">%s</div></div><div class="xax">%s</div></div>',
+          if (nzchar(cls)) paste0(" ", cls) else "", yax, grid, paste(cols, collapse = ""), xax)
+}
+# x labels at quarter months (Jan/Apr/Jul/Oct); the year on January and on the first label
+ov_x_monthly <- function(months) {
+  out <- character(0); n <- length(months)
+  for (i in seq_len(n)) {
+    mo <- as.integer(substr(months[i], 6, 7)); if (!(mo %in% QUARTER)) next
+    out <- c(out, sprintf('<span style="left:%.2f%%">%s</span>', 100 * (i - 0.5) / n, if (mo == 1L || i == 1L) month_label(months[i]) else MON[mo]))
+  }
+  paste(out, collapse = "")
+}
+ov_x_weekly <- function(mondays) {   # anchored at the first week whose Monday falls in a quarter month
+  out <- character(0); n <- length(mondays); first <- TRUE; prev <- ""
+  for (i in seq_len(n)) {
+    m <- format(mondays[i], "%Y-%m"); mo <- as.integer(substr(m, 6, 7)); same <- identical(m, prev); prev <- m
+    if (same || !(mo %in% QUARTER)) next
+    out <- c(out, sprintf('<span style="left:%.2f%%">%s</span>', 100 * (i - 1) / n, if (mo == 1L || first) month_label(m) else MON[mo])); first <- FALSE
+  }
+  paste(out, collapse = "")
+}
+ov_col  <- function(m, tip, inner) sprintf('<span class="col%s" data-m="%s" data-tip="%s">%s</span>', if (m %in% window3) " on" else "", m, esc_a(tip), inner)
+ov_peak <- function(h_pct, label) sprintf('<em class="pk" style="bottom:calc(%s%% + 2px)">%s</em>', h_pct, label)
+held_for <- function(m, pool) if (pool == "cpu") sum_cpu_window(m)$held else sum_gpu_window(m)$held
+
+ov_vol <- function(pool, months, unit, unit_long) {
+  held <- vapply(months, held_for, numeric(1), pool = pool)
+  cap  <- vapply(months, cap_sum_for, numeric(1), pool = pool)
+  tk <- nice_ticks(max(cap)); peak <- which.max(held)
+  cols <- vapply(seq_along(months), function(i) {
+    hp  <- pc(held[i], tk$top)
+    tip <- sprintf("<b>%s</b><br>%s %s reserved · %s of capacity<br>Nominal capacity %s %s", month_label(months[i]), fmt(held[i]), unit, pct(held[i], cap[i]), fmt(cap[i]), unit)
+    ov_col(months[i], tip, sprintf('<b class="slot"><i class="trk" style="height:%s%%"></i><i class="bar" style="height:%s%%"></i>%s</b>',
+                                   pc(cap[i], tk$top), hp, if (i == peak) ov_peak(hp, fmt(held[i])) else ""))
+  }, character(1))
+  sprintf('<div class="slide" data-s="vol"><div class="cap"><span class="ct">Reserved %s by month<i>reserved (solid) against nominal capacity (faint)</i></span><span class="hero"><b>%s</b>%s reserved since %s</span></div>%s</div>',
+          unit_long, compact(sum(held)), unit_long, month_label(months[1]), ov_plot(tk, cols, ov_x_monthly(months)))
+}
+ov_rhy <- function(pool, unit, unit_long) {
+  rows <- wk[wk[, 2] == pool, , drop = FALSE]
+  if (!nrow(rows)) return(sprintf('<div class="slide" data-s="rhy" hidden><div class="cap"><span class="ct">Reserved %s by week</span></div><div class="nodata">No %s data</div></div>', unit_long, toupper(pool)))
+  o <- order(rows[, 1]); mondays <- as.Date(rows[o, 1]); held <- as.numeric(rows[o, 3])
+  tk <- nice_ticks(max(held)); peak <- which.max(held)
+  cols <- vapply(seq_along(mondays), function(i) {
+    hp  <- pc(held[i], tk$top)
+    tip <- sprintf("<b>Week of %s</b><br>%s %s reserved", day_label(mondays[i]), fmt(held[i]), unit)
+    ov_col(format(mondays[i] + 3, "%Y-%m"), tip,   # a week belongs to the month of its Thursday (R6.6)
+           sprintf('<b class="slot"><i class="bar" style="height:%s%%"></i>%s</b>', hp, if (i == peak) ov_peak(hp, fmt(held[i])) else ""))
+  }, character(1))
+  sprintf('<div class="slide" data-s="rhy" hidden><div class="cap"><span class="ct">Reserved %s by week<i>complete weeks, %s – %s</i></span><span class="hero"><b>%s</b>%s in the busiest week (%s)</span></div>%s</div>',
+          unit_long, day_label(mondays[1]), day_label(mondays[length(mondays)] + 6), fmt(held[peak]), unit_long, day_label(mondays[peak]),
+          ov_plot(tk, cols, ov_x_weekly(mondays), "wk"))
+}
+ov_com <- function(pool, months) {
+  cm_m   <- lapply(paste0("M:", months), community_for, pool = pool)
+  users  <- vapply(cm_m, function(x) as.numeric(x$users), numeric(1))
+  groups <- vapply(cm_m, function(x) as.numeric(x$groups), numeric(1))
+  all_r  <- community_for("ALL", pool)
+  tk <- nice_ticks(max(users)); peak <- which.max(users)
+  cols <- vapply(seq_along(months), function(i) {
+    up  <- pc(users[i], tk$top)
+    tip <- sprintf("<b>%s</b><br>%s researchers · %s research groups", month_label(months[i]), fmt(users[i]), fmt(groups[i]))
+    ov_col(months[i], tip, sprintf('<b class="pair"><i class="u" style="height:%s%%"></i><i class="g" style="height:%s%%"></i>%s</b>',
+                                   up, pc(groups[i], tk$top), if (i == peak) ov_peak(up, fmt(users[i])) else ""))
+  }, character(1))
+  sprintf('<div class="slide" data-s="com" hidden><div class="cap"><span class="ct">Researchers and research groups by month<span class="lg"><i class="u"></i>Researchers<i class="g"></i>Research groups</span></span><span class="hero"><b>%s</b>researchers · <b>%s</b>research groups since %s</span></div>%s</div>',
+          fmt(all_r$users), fmt(all_r$groups), month_label(months[1]), ov_plot(tk, cols, ov_x_monthly(months)))
+}
+ov_deck <- function(pool) {
+  months <- if (pool == "cpu") d$meta$months_cpu else d$meta$months_gpu
+  unit <- if (pool == "cpu") "core-h" else "GPU-h"; unit_long <- if (pool == "cpu") "core-hours" else "GPU-hours"
+  sprintf('<div class="deck ov" id="%sov"><h3>%s Activity</h3>%s%s%s</div>', pool, toupper(pool),
+          ov_vol(pool, months, unit, unit_long), ov_rhy(pool, unit, unit_long), ov_com(pool, months))
+}
+ov_gpu_deck  <- ov_deck("gpu")
+ov_cpu_deck  <- ov_deck("cpu")
+ov_range_all <- range_text(all_months)
+
 # ---- assemble ----------------------------------------------------------------
 html <- paste0(
 r"-----(<!DOCTYPE html>
@@ -336,6 +453,29 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 .ft-gh{color:var(--muted);}
 .ft-gh:hover{color:var(--used);}
 .ft-gh svg{height:30px;width:auto;display:block;}
+.slide[hidden]{display:none}
+#gpuov{flex:0 1 37%;}#cpuov{flex:1 1 0;}
+#gpuov h3,#cpuov h3{border-bottom:3px solid;padding-bottom:6px;margin-bottom:10px;}#gpuov h3{border-color:#baf72e;}#cpuov h3{border-color:#4cc9db;}
+.ov{--dim:.5;}
+.ov .cap{display:flex;flex-direction:column;gap:3px;margin:0 0 8px;}
+.ov .ct{font-size:.75rem;font-weight:600;color:var(--text);}.ov .ct>i{font-style:normal;font-weight:400;color:var(--muted);margin-left:8px;}
+.ov .hero{font-size:.72rem;color:var(--muted);white-space:nowrap;}.ov .hero b{font-size:1.25rem;font-weight:600;color:var(--ink);letter-spacing:-.01em;margin-right:5px;}.ov .hero b+b{margin-left:6px;}
+.ov .lg{display:inline-flex;align-items:center;gap:10px;margin-left:10px;font-size:.7rem;font-weight:400;color:var(--muted);}.ov .lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px;}.ov .lg i.u{background:var(--used);}.ov .lg i.g{background:var(--ember);}
+.ov .plot{display:grid;grid-template-columns:auto 1fr;grid-template-rows:var(--h,190px) auto;column-gap:8px;}
+.ov .yax{position:relative;min-width:26px;font-size:.65rem;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right;}.ov .yax span{position:absolute;right:0;transform:translateY(50%);}
+.ov .area{position:relative;}.ov .grid i{position:absolute;left:0;right:0;border-top:1px solid var(--grid);}
+.ov .cols{position:absolute;inset:0;display:flex;align-items:flex-end;gap:2px;border-bottom:1px solid var(--rule);}.ov .wk .cols{gap:1px;}
+.ov .col{flex:1 1 0;min-width:0;height:100%;display:flex;align-items:flex-end;justify-content:center;cursor:help;}
+.ov .slot,.ov .pair{position:relative;width:100%;max-width:24px;height:100%;}
+.ov .trk{position:absolute;left:0;right:0;bottom:0;background:rgba(11,116,104,.10);border-radius:4px 4px 0 0;}
+.ov .bar{position:absolute;left:0;right:0;bottom:0;background:var(--used);border-radius:4px 4px 0 0;opacity:var(--dim);}.ov .wk .bar{border-radius:2px 2px 0 0;}
+.ov .pair{display:flex;gap:2px;align-items:flex-end;max-width:28px;}.ov .pair i{flex:1 1 0;border-radius:3px 3px 0 0;opacity:var(--dim);}.ov .pair .u{background:var(--used);}.ov .pair .g{background:var(--ember);}
+.ov .col.on .bar,.ov .col.on .pair i,.ov .col:hover .bar,.ov .col:hover .pair i{opacity:1;}
+.ov .pk{position:absolute;left:50%;transform:translateX(-50%);font-size:.62rem;font-style:normal;line-height:1;color:var(--muted);white-space:nowrap;padding-bottom:1px;}
+.ov .xax{grid-column:2;position:relative;height:16px;margin-top:5px;font-size:.65rem;line-height:1;color:var(--muted);}.ov .xax span{position:absolute;top:0;white-space:nowrap;transform:translateX(-50%);}
+.ov .wk .xax span{transform:none;padding-left:4px;border-left:1px solid var(--rule);margin-top:-5px;padding-top:5px;}
+.ov .nodata{padding:8px 0;}
+@media(min-width:1700px){.ov .plot{--h:220px;}}
 </style></head><body>
 <header><div class="hwrap"><h1><img class="buplate" src=")-----",
 plate_uri,
@@ -378,6 +518,21 @@ cpu_cov$note,
 r"-----(</div><div class="kpi" id="kpi-cpu">)-----",
 default_cpu_kpi,
 r"-----(</div></div>
+</div>
+<div class="sechead" id="ovhead">
+<div class="ttl">Over time<span>)-----",
+ov_range_all,
+r"-----( · <span id="ovsel">)-----",
+default_range,
+r"-----(</span> highlighted</span></div>
+<div class="ctl"><span class="seg" id="ovtabs"><button class="on" data-s="vol">Monthly volume</button><button data-s="rhy">Weekly rhythm</button><button data-s="com">Researchers</button></span></div>
+</div>
+<div class="deckrow">
+)-----",
+ov_gpu_deck,
+"\n",
+ov_cpu_deck,
+r"-----(
 </div>
 </main>
 <footer class="pagefoot"><div class="ft-l"><img class="ft-emblem" src=")-----",
@@ -493,6 +648,7 @@ function applyWindow(months,key){
   $('#kpi-cpu').innerHTML=cpuCov.empty?'<div class="nodata">No CPU data for this period</div>':cpuKpiHtml(cpuT,communityFor(key,'cpu'),cpuCapH?Math.round(100*cpuT.held/cpuCapH):0);
   $('#kpi-gpu').innerHTML=gpuCov.empty?'<div class="nodata">No GPU data for this period</div>':gpuKpiHtml(gpuT,communityFor(key,'gpu'),gpuCapH?Math.round(100*gpuT.held/gpuCapH):0);
   $('#prange').textContent=rangeText(months);
+  ovHighlight(months);
 }
 const SEGS=[['#seg-p3','past3'],['#seg-p6','past6'],['#seg-all','all']];
 SEGS.forEach(([sel])=>{
@@ -510,6 +666,21 @@ $('#pmonth').addEventListener('change',()=>{
   SEGS.forEach(([s])=>$(s).classList.remove('on'));
   applyWindow(windowFor(v),keyFor(v));
 });
+// ---- Over time (R6.7): tabs, period highlight, gentle auto-advance. The charts
+// are server-rendered; nothing here recomputes a number. ----
+const OV_ORDER=['vol','rhy','com'];
+const ovTabs=[...document.querySelectorAll('#ovtabs button')],ovSlides=[...document.querySelectorAll('.ov .slide')];
+let ovCur=0,ovTimer=null,ovStopped=false;
+const ovReduce=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function ovShow(k){ovCur=OV_ORDER.indexOf(k);ovTabs.forEach(b=>b.classList.toggle('on',b.dataset.s===k));ovSlides.forEach(s=>{s.hidden=s.dataset.s!==k;});}
+function ovStop(){if(ovTimer){clearInterval(ovTimer);ovTimer=null;}}
+function ovStart(){if(ovStopped||ovReduce||ovTimer)return;ovTimer=setInterval(()=>ovShow(OV_ORDER[(ovCur+1)%OV_ORDER.length]),10000);}
+function ovHighlight(months){const set=new Set(months);document.querySelectorAll('.ov [data-m]').forEach(el=>el.classList.toggle('on',set.has(el.dataset.m)));const sel=$('#ovsel');if(sel)sel.textContent=rangeText(months);}
+ovTabs.forEach(b=>b.addEventListener('click',()=>{ovStopped=true;ovStop();ovShow(b.dataset.s);}));
+['#ovhead','#gpuov','#cpuov'].forEach(s=>{const el=$(s);if(!el)return;el.addEventListener('mouseenter',ovStop);el.addEventListener('mouseleave',ovStart);});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)ovStop();else ovStart();});
+{const h=(typeof location==='undefined'?'':(location.hash||'')).slice(1);if(OV_ORDER.includes(h)){ovStopped=true;ovShow(h);}else ovStart();}
+ovHighlight(DATA.meta.window3);
 const tipEl=document.createElement('div');tipEl.id='tip';
 function posTip(x,y){const w=tipEl.offsetWidth,h=tipEl.offsetHeight;let L=x+14,T=y+16;if(L+w>innerWidth-8)L=Math.max(8,x-w-14);if(T+h>innerHeight-8)T=Math.max(8,y-h-16);tipEl.style.left=L+'px';tipEl.style.top=T+'px';}
 function showTip(html,x,y){if(!html){tipEl.style.display='none';return;}tipEl.innerHTML=html;tipEl.style.display='block';posTip(x,y);}

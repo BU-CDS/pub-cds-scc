@@ -4,6 +4,31 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Page: "Over time" charts under the totals** (2026-09-01,
+  `build_cluster_page.R`, `validate.mjs`, `scripts/test_page.mjs`): a new
+  section with one chart deck per pool (GPU Activity / CPU Activity) and
+  three slides chosen by a segmented bar -- Monthly volume (reserved hours
+  each month drawn inside a faint column of nominal capacity, with the
+  cumulative total since the first published month as the headline),
+  Weekly rhythm (reserved hours per complete week across the whole record,
+  the busiest week as the headline) and Researchers (researchers and
+  research groups per month, with the distinct totals over the record).
+  Every chart is rendered when the page is built; the page's own script
+  only switches slides, highlights the months of the period selected above
+  (the rest of each series stays visible but dimmed), and advances the
+  slides every ten seconds -- pausing while the pointer is over the
+  section, stopping for good at the first click, and never moving at all
+  for readers who ask their system for reduced motion. A hash such as
+  `#rhy` opens the page on that slide. Bars are teal, capped at 24 px,
+  separated by a surface gap; research groups use the page's ember hue with
+  a legend; gridlines are hairlines; hovering any column shows its exact
+  figures. The panel-saturation test is now scoped to the pool panels, and
+  both script runners shadow the browser timers so the auto-advance cannot
+  keep them alive. Fixture-tested (structure, default highlight, tooltips,
+  hero and peak figures recomputed from the data, tab and timer behaviour,
+  reduced-motion, a pool with no weekly rows) and verified by screenshot
+  at 1440 and 1920 px.
+
 - **Data layer + gate: GPU history from the GPU pool's own internal data, a
   complete-month rule for both pools, and a weekly table (contract v4)**
   (2026-09-01, `scripts/50_cluster_data.R`, `scripts/test_cluster_data.R`,

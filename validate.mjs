@@ -54,8 +54,10 @@ const window = { addEventListener: () => {}, matchMedia: () => ({ matches: false
 const localStorage = { getItem: () => null, setItem: () => {} };
 
 try {
-  new Function('document', 'window', 'localStorage', 'matchMedia', scripts)(
-    document, window, localStorage, window.matchMedia);
+  // setInterval/clearInterval are shadowed with stubs: the page's auto-advance
+  // would otherwise arm a real Node timer and keep this validator alive forever.
+  new Function('document', 'window', 'localStorage', 'matchMedia', 'setInterval', 'clearInterval', scripts)(
+    document, window, localStorage, window.matchMedia, () => 0, () => {});
   console.log('validate: page JS executed cleanly');
 } catch (e) {
   console.error('validate: PAGE JS THREW -> ' + (e && e.message ? e.message : e));
