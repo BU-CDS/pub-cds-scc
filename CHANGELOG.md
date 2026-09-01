@@ -4,6 +4,24 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **CPU panel: memory shown as a column, not a tooltip line**
+  (2026-08-31, `build_cluster_page.R`, `scripts/test_page.mjs`): the CPU
+  hardware panel gains a fourth column -- CPU, Cores, RAM, Nodes -- showing
+  each model's per-node memory (e.g. "1,007 GB"), right-aligned like the
+  Cores column. Both panels' model tooltips now read just
+  "<Model><br>Server: <server>"; the redundant "RAM: ... GB per node" /
+  "VRAM: ... GB per GPU" line is gone (the node-cluster tooltips, and the
+  GPU panel's own VRAM column, are unchanged -- memory now appears exactly
+  once per panel). Column widths were checked against real measured text
+  rather than assumed: the Cores and RAM columns widen a little past the
+  first pitch to comfortably fit the widest real values ("32 cores",
+  "1,007 GB"), with the label column narrowing slightly to compensate; the
+  GPU panel's share of the two-panel row narrows from 40% to 37% to make
+  room. Confirmed the CPU hardware row's cluster-square layout still fits
+  on one line with margin to spare at 1440/1700/1920px. Fixture-tested
+  (204/204 total assertions) and run through `validate.mjs`, the de-id gate
+  over the built page, and the full staged pipeline, all green.
+
 - **Public page: totals cards show positive/neutral counterparts, no
   negative-connotation tiles** (2026-08-31, `build_cluster_page.R`,
   `scripts/test_page.mjs`): the GPU and CPU Totals cards no longer show

@@ -352,8 +352,8 @@ has(styleBlock, '.sechead{flex-wrap:wrap', 'the section header wraps controls un
 
 // ---- 11. asymmetric pool split: CPU container wider so
 // the 6-cluster E5 row renders on one line, panel heights come closer ----
-has(styleBlock, '#gpupanel,#gpucard{flex:0 1 40%', 'GPU panel + totals card take the narrower 40% flex share');
-has(styleBlock, '#cpupanel,#cpucard{flex:1 1 0', 'CPU panel + totals card take the wider (~60%) flex share');
+has(styleBlock, '#gpupanel,#gpucard{flex:0 1 37%', 'GPU panel + totals card take the narrower 37% flex share');
+has(styleBlock, '#cpupanel,#cpucard{flex:1 1 0', 'CPU panel + totals card take the wider (~63%) flex share');
 has(styleBlock, '.hwlbl{color:var(--text);white-space:nowrap', 'hardware labels never wrap mid-name (.hwlbl gets white-space:nowrap)');
 not(styleBlock, '.pool-cpu .hwnodes{display:grid', 'CPU node grid override was dropped -- back to flex-wrap now that the wider 60% column fits the E5 row on one line');
 /--core-s:clamp\(5px,0\.35vw,12px\)/.test(styleBlock)
@@ -366,9 +366,66 @@ not(styleBlock, '.pool-cpu .hwnodes{display:grid', 'CPU node grid override was d
 // ---- 12. even column gutters: a uniform-gutter grid with
 // snug per-pool label/value column widths, instead of a one-size-fits-all
 // flex-basis that left ~70px of dead space before short GPU labels ----
-has(styleBlock, '.hwcols,.hwrow{display:grid;grid-template-columns:var(--lblw) var(--valw) 1fr;column-gap:18px', 'hardware rows use a uniform-gutter grid (one column-gap, per-pool column widths via --lblw/--valw)');
+has(styleBlock, '.hwcols,.hwrow{display:grid;grid-template-columns:var(--lblw) var(--valw) 1fr;column-gap:18px', 'hardware rows use a uniform-gutter grid (one column-gap, per-pool column widths via --lblw/--valw); GPU keeps this shared 3-column template unmodified');
 has(styleBlock, '.pool-gpu{--lblw:80px;--valw:56px', 'GPU panel gets snug columns sized to its longest label/value ("RTXP6000" / "144 GB")');
-has(styleBlock, '.pool-cpu{--lblw:130px;--valw:64px', 'CPU panel keeps its wider columns sized to its longest label/value ("Xeon E5-2660\\u00a0v3" / "32 cores")');
+has(styleBlock, '.pool-cpu .hwcols,.pool-cpu .hwrow{grid-template-columns:var(--lblw) var(--valw) var(--ramw) 1fr;}', 'CPU gets a pool-scoped 4th column (RAM) via an override rule, not by changing the shared 3-column template');
+has(styleBlock, '.pool-cpu{--lblw:120px;--valw:60px;--ramw:66px', 'CPU panel columns are sized to real measured text: label narrows (still fits "Xeon E5-2660\\u00a0v3"), Cores/RAM widen from the brief\'s literal 44px/64px pitch to fit the longest real values ("32 cores" / "1,007 GB")');
+
+// ---- 12b. memory shown exactly once per panel: CPU gains a RAM column
+// (Cores/RAM/Nodes plus the label -> CPU, Cores, RAM, Nodes); both panels'
+// model tooltips drop the redundant RAM/VRAM line (node-square tooltips and
+// the GPU panel's own VRAM column are unchanged) ----
+const gpuPanel = sliceFrom('id="gpupanel"', ['id="cpupanel"']);
+const cpuPanel = sliceFrom('id="cpupanel"', ['id="sechead"']);
+gpuPanel && cpuPanel ? ok('both hardware panels were located in the page') : bad('could not locate both hardware panels');
+{
+  const cpuColsBlock = (cpuPanel.match(/<div class="hwcols">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  const cpuColLabels = [...cpuColsBlock.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map(m => m[1]);
+  JSON.stringify(cpuColLabels) === JSON.stringify(['CPU', 'Cores', 'RAM', 'Nodes'])
+    ? ok('CPU .hwcols header reads CPU, Cores, RAM, Nodes in that order')
+    : bad('CPU .hwcols header is ' + JSON.stringify(cpuColLabels) + ', want ["CPU","Cores","RAM","Nodes"]');
+
+  const gpuColsBlock = (gpuPanel.match(/<div class="hwcols">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  const gpuColLabels = [...gpuColsBlock.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map(m => m[1]);
+  JSON.stringify(gpuColLabels) === JSON.stringify(['GPU', 'VRAM', 'Nodes'])
+    ? ok('GPU .hwcols header is unchanged: GPU, VRAM, Nodes')
+    : bad('GPU .hwcols header is ' + JSON.stringify(gpuColLabels) + ', want ["GPU","VRAM","Nodes"] (unchanged)');
+}
+{
+  // recompute each CPU model's per-node RAM straight from capacity.cpu.types
+  // (5th field, GB) and check every rendered RAM cell against it
+  const cpuRows = [...cpuPanel.matchAll(/<div class="hwrow">([\s\S]*?)<\/div>/g)].map(m => m[1]);
+  cpuRows.length === data.capacity.cpu.types.length
+    ? ok('CPU panel renders one .hwrow per capacity.cpu.types entry (' + cpuRows.length + ')')
+    : bad('CPU panel renders ' + cpuRows.length + ' .hwrow, want ' + data.capacity.cpu.types.length);
+  cpuRows.forEach((row, i) => {
+    const ramCell = (row.match(/<span class="hwc hwram">([^<]*)<\/span>/) || ['', ''])[1];
+    const shapeOk = /^\d{1,3}(,\d{3})* GB$/.test(ramCell);
+    const ramGb = Number(data.capacity.cpu.types[i][4]);
+    const expected = Math.round(ramGb).toLocaleString('en-US') + ' GB';
+    (shapeOk && ramCell === expected)
+      ? ok('CPU row ' + i + ' RAM cell reads "' + ramCell + '" (matches capacity.cpu.types, /^\\d{1,3}(,\\d{3})* GB$/)')
+      : bad('CPU row ' + i + ' RAM cell is "' + ramCell + '", want "' + expected + '" matching /^\\d{1,3}(,\\d{3})* GB$/');
+  });
+}
+{
+  // every model tooltip (both panels) is exactly "<b>Model</b><br>Server: X" --
+  // no RAM/VRAM line. Node-square tooltips (class="cnode") are untouched and
+  // deliberately excluded from this selector.
+  const tips = [...html.matchAll(/class="hwlbl" data-tip="([^"]*)"/g)].map(m => m[1]);
+  tips.length > 0
+    ? ok('found ' + tips.length + ' model tooltips (.hwlbl data-tip) to check')
+    : bad('found no .hwlbl model tooltips');
+  const unesc = s => s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<');
+  tips.forEach((t, i) => {
+    const plain = unesc(t);
+    /^<b>[^<]+<\/b><br>Server: [^<]+$/.test(plain)
+      ? ok('model tooltip ' + i + ' matches "<b>Model</b><br>Server: X" exactly (no RAM/VRAM line)')
+      : bad('model tooltip ' + i + ' is "' + plain + '", does not match "<b>Model</b><br>Server: X"');
+  });
+  for (const needle of ['RAM:', 'VRAM:'])
+    not(html, needle, 'no data-tip (or any other page text) contains "' + needle + '" -- memory appears once, as the CPU RAM column / the GPU VRAM column');
+}
 
 // ---- 13. sticky footer + wide-screen growth ----
 has(styleBlock, 'body{display:flex;flex-direction:column', 'body is a flex column (sticky-footer pattern)');

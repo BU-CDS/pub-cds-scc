@@ -102,23 +102,25 @@ coverage_note <- function(months, pool_months, pool_label) {
 # ---- pool panels: one hardware row per capacity.types[] entry. No live data
 # exists for this page (capacity, not occupancy) -- every block renders
 # saturated. Node clusters are built purely from count x per_node; tooltips
-# carry only what the JSON actually has (Server, RAM-per-node or VRAM-per-GPU)
-# -- no hostnames, no install dates. Adaptation of gpu-cds-scc build_gpu_portal.R
-# livePanel() / cpu-cds-scc build_cpu_portal.R renderLive(): same hwtop/hwcols/
-# hwrow/cnode idiom, held-related bits dropped since there is no live feed. ----
+# carry only the model and server -- no hostnames, no install dates. Per-node
+# RAM / per-GPU VRAM appears exactly once per panel: as its own column on the
+# CPU panel (a second .hwc cell, tagged .hwram so tests can target it), and as
+# the GPU panel's existing VRAM column -- never duplicated into tooltip text.
+# Adaptation of gpu-cds-scc build_gpu_portal.R livePanel() / cpu-cds-scc
+# build_cpu_portal.R renderLive(): same hwtop/hwcols/hwrow/cnode idiom,
+# held-related bits dropped since there is no live feed. ----
 panel_row <- function(label, server, count, per_node, ram, pool) {
   disp <- if (pool == "cpu") model_label(label) else label
   unit <- if (pool == "cpu") paste0(fmt(per_node), " cores") else paste0(fmt(ram), " GB")
-  row_tip <- paste0("<b>", esc_h(disp), "</b><br>Server: ", esc_h(server),
-                     if (pool == "cpu") paste0("<br>RAM: ", fmt(ram), " GB per node")
-                     else paste0("<br>VRAM: ", fmt(ram), " GB per GPU"))
+  row_tip <- paste0("<b>", esc_h(disp), "</b><br>Server: ", esc_h(server))
   cluster_tip <- if (pool == "cpu") paste0(fmt(per_node), " cores")
                  else paste0(fmt(per_node), " GPUs · ", fmt(ram), " GB each")
   square <- '<i class="on"></i>'
   one_cluster <- sprintf('<span class="cnode" data-tip="%s">%s</span>', esc_a(cluster_tip), paste(rep(square, per_node), collapse = ""))
   clusters <- paste(rep(one_cluster, count), collapse = "")
-  sprintf('<div class="hwrow"><span class="hwlbl" data-tip="%s">%s</span><span class="hwc">%s</span><span class="hwnodes">%s</span></div>',
-          esc_a(row_tip), esc_h(disp), unit, clusters)
+  ram_cell <- if (pool == "cpu") sprintf('<span class="hwc hwram">%s GB</span>', fmt(ram)) else ""
+  sprintf('<div class="hwrow"><span class="hwlbl" data-tip="%s">%s</span><span class="hwc">%s</span>%s<span class="hwnodes">%s</span></div>',
+          esc_a(row_tip), esc_h(disp), unit, ram_cell, clusters)
 }
 
 panel_html <- function(types, pool) {
@@ -127,7 +129,8 @@ panel_html <- function(types, pool) {
   }, character(1))
   head_lbl <- if (pool == "cpu") "CPU" else "GPU"
   unit_lbl <- if (pool == "cpu") "Cores" else "VRAM"
-  cols <- sprintf('<div class="hwcols"><span class="hwlbl">%s</span><span class="hwc">%s</span><span class="hwnodes">Nodes</span></div>', head_lbl, unit_lbl)
+  ram_head <- if (pool == "cpu") '<span class="hwc hwram">RAM</span>' else ""
+  cols <- sprintf('<div class="hwcols"><span class="hwlbl">%s</span><span class="hwc">%s</span>%s<span class="hwnodes">Nodes</span></div>', head_lbl, unit_lbl, ram_head)
   paste0(cols, paste(rows, collapse = "\n"))
 }
 
@@ -245,7 +248,7 @@ h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .pool-gpu h3,#gpucard h3{border-color:#baf72e;}
 .pool-cpu h3,#cpucard h3{border-color:#4cc9db;}
 .deckrow{display:flex;gap:16px;align-items:stretch;margin-bottom:12px;}.deckrow .deck{flex:1 1 auto;margin-bottom:0;min-width:0;}
-#gpupanel,#gpucard{flex:0 1 40%;}#cpupanel,#cpucard{flex:1 1 0;}
+#gpupanel,#gpucard{flex:0 1 37%;}#cpupanel,#cpucard{flex:1 1 0;}
 @media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.sechead{flex-wrap:wrap;}}
 select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);}#pmonth{font-variant-numeric:tabular-nums;}
 .sechead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--rule);}
@@ -256,7 +259,8 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 .hwrow{padding:5px 0;border-bottom:1px solid var(--grid);}.hwrow:last-child{border-bottom:none;padding-bottom:0;}
 .hwlbl{color:var(--text);white-space:nowrap;}.hwc{text-align:right;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
 .hwnodes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
-.pool-cpu{--lblw:130px;--valw:64px;--core-s:clamp(5px,0.35vw,12px);}.pool-cpu .cnode{display:grid;grid-template-columns:repeat(8,var(--core-s));gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-cpu .cnode i{width:var(--core-s);height:var(--core-s);border-radius:3px;display:block;background:var(--idle);}.pool-cpu .cnode i.on{background:var(--used);}
+.pool-cpu .hwcols,.pool-cpu .hwrow{grid-template-columns:var(--lblw) var(--valw) var(--ramw) 1fr;}
+.pool-cpu{--lblw:120px;--valw:60px;--ramw:66px;--core-s:clamp(5px,0.35vw,12px);}.pool-cpu .cnode{display:grid;grid-template-columns:repeat(8,var(--core-s));gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-cpu .cnode i{width:var(--core-s);height:var(--core-s);border-radius:3px;display:block;background:var(--idle);}.pool-cpu .cnode i.on{background:var(--used);}
 .pool-gpu{--lblw:80px;--valw:56px;--gpu-w:clamp(13px,0.93vw,40px);--gpu-h:clamp(10px,0.47vw,20px);}.pool-gpu .cnode{display:inline-flex;gap:3px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);}.pool-gpu .cnode i{width:var(--gpu-w);height:var(--gpu-h);border-radius:4px;display:block;background:var(--idle);}.pool-gpu .cnode i.on{background:var(--used);}
 @media(min-width:1700px){.pool-cpu{--core-s:clamp(8px,0.5vw,12px);}.pool-gpu{--gpu-w:clamp(22px,1.4vw,40px);--gpu-h:clamp(11px,0.7vw,20px);}.deck{padding:13px 14px;}.kpi .kn{font-size:1.3rem;}}
 [data-tip]{cursor:help;}
