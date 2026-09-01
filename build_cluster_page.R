@@ -68,15 +68,16 @@ model_label <- function(x) {
 MON <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 month_label <- function(m) paste0(MON[as.integer(substr(m, 6, 7))], " ", substr(m, 1, 4))
 
-# resolved-range text under the period controls, e.g. "· May – Jul 2026" (year
-# shown once when both ends share a year) or "· Jul 2026" for a single month.
+# resolved-range text in the "Totals" section header, e.g. "May – Jul 2026"
+# (year shown once when both ends share a year) or "Jul 2026" for a single
+# month -- no leading separator; it sits right after "Totals" in the title line.
 # Mirrors the page's own JS rangeText() so the SSR default and a JS recompute agree.
 range_text <- function(months) {
   if (!length(months)) return("")
   a <- months[1]; b <- months[length(months)]
-  if (a == b) return(paste0("· ", month_label(a)))
+  if (a == b) return(month_label(a))
   a_lbl <- if (substr(a, 1, 4) == substr(b, 1, 4)) MON[as.integer(substr(a, 6, 7))] else month_label(a)
-  paste0("· ", a_lbl, " – ", month_label(b))
+  paste0(a_lbl, " – ", month_label(b))
 }
 
 # ---- pool panels: one hardware row per capacity.types[] entry. No live data
@@ -230,11 +231,12 @@ h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .pool-cpu h3,#cpucard h3{border-color:#4cc9db;}
 .deckrow{display:flex;gap:16px;align-items:stretch;margin-bottom:12px;}.deckrow .deck{flex:1 1 auto;margin-bottom:0;min-width:0;}
 #gpupanel,#gpucard{flex:0 1 40%;}#cpupanel,#cpucard{flex:1 1 0;}
-@media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.kpi{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.kpi{grid-template-columns:repeat(2,1fr);}.sechead{flex-wrap:wrap;}}
 select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);}#pmonth{font-variant-numeric:tabular-nums;}
-.periodbar{display:flex;align-items:center;justify-content:center;gap:8px;margin:4px 0 10px;}
+.sechead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--rule);}
+.sechead .ttl{font-size:.8rem;font-weight:700;color:var(--ink);}.sechead .ttl span{font-weight:400;color:var(--muted);margin-left:8px;}
+.sechead .ctl{display:flex;align-items:center;gap:10px;}
 .seg{display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;}.seg button{border:none;border-right:1px solid var(--border);background:var(--surface);font:inherit;font-size:0.75rem;padding:4px 10px;cursor:pointer;color:var(--text);border-radius:0;}.seg button:last-child{border-right:none;}.seg button:hover{background:var(--surface2);}.seg button.on{background:var(--used);color:#fff;}
-.prangetext{color:var(--muted);font-size:0.75rem;white-space:nowrap;}
 .hwcols,.hwrow{display:grid;grid-template-columns:var(--lblw) var(--valw) 1fr;column-gap:18px;align-items:center;}.hwcols{font-size:0.75rem;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:2px;}.hwcols span{color:var(--ink);font-weight:bold;}
 .hwrow{padding:5px 0;border-bottom:1px solid var(--grid);}.hwrow:last-child{border-bottom:none;padding-bottom:0;}
 .hwlbl{color:var(--text);white-space:nowrap;}.hwc{text-align:right;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
@@ -261,14 +263,16 @@ r"-----(</div>
 cpu_panel,
 r"-----(</div>
 </div>
-<div class="periodbar" id="periodbar">
+<div class="sechead" id="sechead">
+<div class="ttl">Totals<span id="prange">)-----",
+default_range,
+r"-----(</span></div>
+<div class="ctl">
 <span class="seg"><button id="seg-p3" class="on" data-w="past3">Past 3 months</button><button id="seg-p6" data-w="past6">Past 6 months</button><button id="seg-all" data-w="all">All months</button></span>
 <select id="pmonth">)-----",
 month_select_options,
 r"-----(</select>
-<span class="prangetext" id="prange">)-----",
-default_range,
-r"-----(</span>
+</div>
 </div>
 <div class="deckrow">
 <div class="deck" id="gpucard"><h3>GPU Totals</h3><div class="kpi" id="kpi-gpu">)-----",
@@ -355,9 +359,9 @@ function monthLabel(m,withYear){return MON[+m.slice(5,7)-1]+(withYear?' '+m.slic
 function rangeText(months){
   if(!months.length)return '';
   const a=months[0],b=months[months.length-1];
-  if(a===b)return '· '+monthLabel(a,true);
+  if(a===b)return monthLabel(a,true);
   const sameYear=a.slice(0,4)===b.slice(0,4);
-  return '· '+monthLabel(a,!sameYear)+' – '+monthLabel(b,true);
+  return monthLabel(a,!sameYear)+' – '+monthLabel(b,true);
 }
 function applyWindow(months){
   $('#kpi-cpu').innerHTML=cpuKpiHtml(sumCpu(months));

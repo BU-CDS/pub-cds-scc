@@ -35,9 +35,9 @@ const monthLbl = (m, withYear) => MON[+m.slice(5, 7) - 1] + (withYear ? ' ' + m.
 const rangeTextJS = (months) => {
   if (!months.length) return '';
   const a = months[0], b = months[months.length - 1];
-  if (a === b) return '· ' + monthLbl(a, true);
+  if (a === b) return monthLbl(a, true);
   const sameYear = a.slice(0, 4) === b.slice(0, 4);
-  return '· ' + monthLbl(a, !sameYear) + ' – ' + monthLbl(b, true);
+  return monthLbl(a, !sameYear) + ' – ' + monthLbl(b, true);
 };
 
 // ---- 0. exactly one inline <script>; no external requests / storage / theme machinery ----
@@ -74,7 +74,7 @@ const P = sel => parentOf[sel] || '(absent)';
 P('div.deckrow') === 'main' ? ok('a deckrow is a direct child of main') : bad('deckrow parent is ' + P('div.deckrow'));
 P('div#gpupanel.deck.pool-gpu') === 'div.deckrow' ? ok('GPU panel sits inside a deckrow') : bad('GPU panel parent is ' + P('div#gpupanel.deck.pool-gpu'));
 P('div#cpupanel.deck.pool-cpu') === 'div.deckrow' ? ok('CPU panel sits inside a deckrow') : bad('CPU panel parent is ' + P('div#cpupanel.deck.pool-cpu'));
-P('div#periodbar.periodbar') === 'main' ? ok('period control bar is a direct child of main') : bad('period control bar parent is ' + P('div#periodbar.periodbar'));
+P('div#sechead.sechead') === 'main' ? ok('the section-header period control is a direct child of main') : bad('section-header parent is ' + P('div#sechead.sechead'));
 P('div#gpucard.deck') === 'div.deckrow' ? ok('GPU totals card sits inside a deckrow') : bad('GPU totals card parent is ' + P('div#gpucard.deck'));
 P('div#cpucard.deck') === 'div.deckrow' ? ok('CPU totals card sits inside a deckrow') : bad('CPU totals card parent is ' + P('div#cpucard.deck'));
 
@@ -113,23 +113,31 @@ for (const needle of ['livebadge', 'stalebadge', 'livedot', 'LIVE</span>', '>STA
 // still be present, not forbidden.
 has(html, 'updated quarterly', 'footer keeps the "updated quarterly" stamp deploy.sh checks for');
 
-// ---- 5. period controls: segmented [Past 3|6|All] bar + month select + range text ----
-has(html, 'class="seg"', 'segmented period bar (.seg) is present');
+// ---- 5. period controls: a "Totals" section header carrying the range text
+// (.ttl) plus the segmented [Past 3|6|All] bar + month select (.ctl) ----
+const secheadStart = html.indexOf('id="sechead"');
+const secheadEnd = secheadStart >= 0 ? html.indexOf('<div class="deckrow">', secheadStart) : -1;
+const secheadBlock = secheadStart >= 0 && secheadEnd >= 0 ? html.slice(secheadStart, secheadEnd) : '';
+const ttlBlock = (secheadBlock.match(/class="ttl">([\s\S]*?)<\/div>/) || ['', ''])[1];
+const ctlBlock = secheadBlock.slice(secheadBlock.indexOf('class="ctl"'));
+secheadBlock ? ok('the "Totals" section header (#sechead) was located') : bad('could not locate #sechead');
+has(ttlBlock, 'Totals', '.ttl carries the "Totals" heading');
+has(ttlBlock, 'id="prange"', '.ttl carries the #prange range-text element');
+has(ctlBlock, 'class="seg"', '.ctl carries the segmented period bar (.seg)');
 for (const lbl of ['Past 3 months', 'Past 6 months', 'All months'])
-  has(html, '>' + lbl + '<', 'segmented bar offers "' + lbl + '"');
-/<button id="seg-p3" class="on"[^>]*>Past 3 months<\/button>/.test(html)
+  has(ctlBlock, '>' + lbl + '<', '.ctl segmented bar offers "' + lbl + '"');
+/<button id="seg-p3" class="on"[^>]*>Past 3 months<\/button>/.test(ctlBlock)
   ? ok('segmented bar defaults to "Past 3 months" active (class="on")')
   : bad('segmented bar default "on" button is not Past 3 months');
-has(html, '<select id="pmonth"', 'month-only <select> is present');
-has(html, '<option value="" selected>Month', 'month select defaults to the neutral "Month…" placeholder');
+has(ctlBlock, '<select id="pmonth"', '.ctl carries the month-only <select>');
+has(ctlBlock, '<option value="" selected>Month', 'month select defaults to the neutral "Month…" placeholder');
 for (const m of [...new Set([...data.meta.months_cpu.slice(-2), ...data.meta.months_gpu.slice(-2)])])
-  has(html, '<option value="' + m + '"', 'month select lists month ' + m);
-has(html, '<span class="prangetext" id="prange">', 'resolved-range text element is present');
+  has(ctlBlock, '<option value="' + m + '"', 'month select lists month ' + m);
 {
   const expected = rangeTextJS(data.meta.window3);
-  const got = (html.match(/id="prange">([^<]*)</) || ['', '(absent)'])[1];
+  const got = (ttlBlock.match(/id="prange">([^<]*)</) || ['', '(absent)'])[1];
   got === expected
-    ? ok('range text matches window3 initially ("' + expected + '")')
+    ? ok('range text matches window3 initially ("' + expected + '", no leading separator)')
     : bad('range text is "' + got + '", expected "' + expected + '" (window3)');
 }
 
@@ -258,8 +266,13 @@ has(styleBlock, '.kpi{display:grid;grid-template-columns:repeat(4,1fr)', 'KPI ca
 has(styleBlock, '.pool-gpu h3,#gpucard h3{border-color:#baf72e', 'GPU panel + totals titles carry the chartreuse pool-accent rule line');
 has(styleBlock, '.pool-cpu h3,#cpucard h3{border-color:#4cc9db', 'CPU panel + totals titles carry the cyan pool-accent rule line');
 not(styleBlock, 'h2{', 'the unused h2 rule was removed (dead CSS -- no <h2> in the markup)');
-has(styleBlock, '.periodbar{display:flex;align-items:center;justify-content:center', 'the period bar is a chrome-less, centered row (not a full deck)');
-not(styleBlock, '#periodctl', 'the old #periodctl deck rules were removed (replaced by the chrome-less .periodbar)');
+has(styleBlock, '.sechead{display:flex;align-items:baseline;justify-content:space-between', 'the period control is a "Totals" section-header row (V2 mockup)');
+has(styleBlock, 'border-bottom:1px solid var(--rule)', 'the section header carries a rule line underneath');
+has(styleBlock, '.sechead .ttl{font-size:.8rem;font-weight:700', '.ttl (the "Totals" title) is styled per the mockup');
+has(styleBlock, '.sechead .ctl{display:flex;align-items:center;gap:10px', '.ctl (the segment/select controls) is styled per the mockup');
+not(styleBlock, '.periodbar', 'the old .periodbar rules were removed (replaced by .sechead)');
+not(styleBlock, '#periodctl', 'the old #periodctl deck rules were removed (replaced by the .sechead section header)');
+has(styleBlock, '.sechead{flex-wrap:wrap', 'the section header wraps controls under the title on narrow screens (<=900px)');
 
 // ---- 11. asymmetric pool split (maintainer round 2): CPU container wider so
 // the 6-cluster E5 row renders on one line, panel heights come closer ----
