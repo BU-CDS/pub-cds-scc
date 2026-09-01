@@ -137,6 +137,19 @@ panel_html <- function(types, pool) {
 gpu_panel <- panel_html(d$capacity$gpu$types, "gpu")
 cpu_panel <- panel_html(d$capacity$cpu$types, "cpu")
 
+# R5.2: a data-driven growth note in a pool panel's <h3>, right-aligned by the
+# .pool h3 flex rule -- rendered ONLY when that pool's added_12m is > 0
+# (maintainer ruling 2026-09-01); no <span> at all otherwise.
+GROWTH_WORD <- list(cpu = c(singular = "node", plural = "nodes"), gpu = c(singular = "GPU", plural = "GPUs"))
+growth_note <- function(pool, n) {
+  n <- suppressWarnings(as.integer(n))
+  if (is.na(n) || n <= 0) return("")
+  word <- GROWTH_WORD[[pool]][[if (n == 1) "singular" else "plural"]]
+  sprintf('<span class="hnote">%s %s added in the past 12 months</span>', fmt(n), word)
+}
+gpu_growth <- growth_note("gpu", d$capacity$gpu$added_12m)
+cpu_growth <- growth_note("cpu", d$capacity$cpu$added_12m)
+
 # ---- KPI totals: sum the monthly tables over a window (a set of "YYYY-MM"
 # strings). Server-rendered here for the default trailing-3-month window
 # (meta.window3) so the page means something before/without JS; the page's
@@ -150,6 +163,24 @@ cpu_panel <- panel_html(d$capacity$cpu$types, "cpu")
 as_mat <- function(x, ncol) if (is.null(dim(x))) matrix(x, ncol = ncol, byrow = TRUE) else x
 cm <- as_mat(d$cpu_monthly, 9)   # month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h
 gm <- as_mat(d$gpu_monthly, 10)  # month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs
+cmty <- as_mat(d$community, 4)         # window_key,pool,users,groups
+capm <- as_mat(d$capacity_monthly, 3)  # month,pool,cap_h
+
+# R5.4 lookup/sum: community is looked up by window key (not re-summed --
+# contract v3 already precomputes each pool's distinct-count intersection with
+# its own published months for every selectable period); capacity_monthly is
+# summed over the window's months for that pool. A window with no rows for a
+# pool naturally sums/looks up to 0, matching the coverage-note "no data"
+# replacement above (this pairing never surfaces a live 0/0 tile).
+community_for <- function(window_key, pool) {
+  idx <- which(cmty[, 1] == window_key & cmty[, 2] == pool)
+  if (!length(idx)) return(list(users = 0L, groups = 0L))
+  list(users = as.integer(cmty[idx[1], 3]), groups = as.integer(cmty[idx[1], 4]))
+}
+cap_sum_for <- function(months, pool) {
+  idx <- capm[, 2] == pool & capm[, 1] %in% months
+  sum(as.numeric(capm[idx, 3]))
+}
 
 sum_cpu_window <- function(months) {
   idx <- cm[, 1] %in% months
@@ -179,12 +210,27 @@ GPU_TIPS <- list(
   kwh = "Energy from sampled GPU power.",
   vram = "Mean VRAM in use, as a share of capacity."
 )
+# R5.1: three new tiles lead every totals card, same tooltips on both pools.
+COMMUNITY_TIPS <- list(
+  users = "Distinct researchers who ran at least one job in the period.",
+  groups = "Distinct research groups with at least one job in the period.",
+  cap = "Share of the pool's nominal capacity-hours reserved by jobs. Reserved is not the same as busy — see Avg utilization."
+)
 
 kpi_tile <- function(n, l, t = "") sprintf('<div class="k"%s><div class="kl">%s</div><div class="kn">%s</div></div>',
                                             if (nzchar(t)) sprintf(' data-tip="%s"', t) else "", l, n)
 
-cpu_kpi_html <- function(T) {
+community_tiles_html <- function(cmty_t, cap_pct) {
   paste0(
+    kpi_tile(fmt(cmty_t$users), "Researchers served", COMMUNITY_TIPS$users),
+    kpi_tile(fmt(cmty_t$groups), "Research groups", COMMUNITY_TIPS$groups),
+    kpi_tile(cap_pct, "Capacity reserved", COMMUNITY_TIPS$cap)
+  )
+}
+
+cpu_kpi_html <- function(T, cmty_t, cap_pct) {
+  paste0(
+    community_tiles_html(cmty_t, cap_pct),
     kpi_tile(fmth(T$held), "Reserved core-h", CPU_TIPS$held),
     kpi_tile(fmth(T$utilized), "Utilized core-h", CPU_TIPS$utilized),
     kpi_tile(pct(T$utilized, T$held), "Avg efficiency", CPU_TIPS$eff),
@@ -192,8 +238,9 @@ cpu_kpi_html <- function(T) {
     kpi_tile(if (T$njobs > 0) fmt(T$held / T$njobs) else "—", "Core-h per job", CPU_TIPS$perjob)
   )
 }
-gpu_kpi_html <- function(T) {
+gpu_kpi_html <- function(T, cmty_t, cap_pct) {
   paste0(
+    community_tiles_html(cmty_t, cap_pct),
     kpi_tile(fmth(T$held), "Reserved GPU-h", GPU_TIPS$held),
     kpi_tile(fmth(T$real), "Utilized GPU-h", GPU_TIPS$utilized),
     kpi_tile(pct(T$real, T$held), "Avg utilization", GPU_TIPS$busy),
@@ -206,8 +253,12 @@ gpu_kpi_html <- function(T) {
 window3 <- d$meta$window3
 cpu_cov <- coverage_note(window3, d$meta$months_cpu, "CPU")
 gpu_cov <- coverage_note(window3, d$meta$months_gpu, "GPU")
-default_cpu_kpi <- if (cpu_cov$empty) '<div class="nodata">No CPU data for this period</div>' else cpu_kpi_html(sum_cpu_window(window3))
-default_gpu_kpi <- if (gpu_cov$empty) '<div class="nodata">No GPU data for this period</div>' else gpu_kpi_html(sum_gpu_window(window3))
+cpu_t3 <- sum_cpu_window(window3)
+gpu_t3 <- sum_gpu_window(window3)
+cpu_cap3 <- pct(cpu_t3$held, cap_sum_for(window3, "cpu"))
+gpu_cap3 <- pct(gpu_t3$held, cap_sum_for(window3, "gpu"))
+default_cpu_kpi <- if (cpu_cov$empty) '<div class="nodata">No CPU data for this period</div>' else cpu_kpi_html(cpu_t3, community_for("P3", "cpu"), cpu_cap3)
+default_gpu_kpi <- if (gpu_cov$empty) '<div class="nodata">No GPU data for this period</div>' else gpu_kpi_html(gpu_t3, community_for("P3", "gpu"), gpu_cap3)
 default_range <- range_text(window3)
 
 # ---- period controls: a segmented [Past 3 | Past 6 | All] bar (default:
@@ -247,6 +298,8 @@ h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .pool-gpu h3,.pool-cpu h3,#gpucard h3,#cpucard h3{border-bottom:3px solid;padding-bottom:6px;margin-bottom:10px;}
 .pool-gpu h3,#gpucard h3{border-color:#baf72e;}
 .pool-cpu h3,#cpucard h3{border-color:#4cc9db;}
+.pool h3{display:flex;justify-content:space-between;align-items:baseline}
+.hnote{font-weight:400;font-size:0.72rem;color:var(--muted);letter-spacing:0;white-space:nowrap}
 .deckrow{display:flex;gap:16px;align-items:stretch;margin-bottom:12px;}.deckrow .deck{flex:1 1 auto;margin-bottom:0;min-width:0;}
 #gpupanel,#gpucard{flex:0 1 37%;}#cpupanel,#cpucard{flex:1 1 0;}
 @media(max-width:900px){.deckrow{display:block;}.deckrow .deck{margin-bottom:12px;}.sechead{flex-wrap:wrap;}}
@@ -292,10 +345,14 @@ r"-----(" alt="Boston University"><span class="orgname">Faculty of Computing &am
 d$meta$updated,
 r"-----(</span></div>
 <div class="deckrow">
-<div class="deck pool-gpu" id="gpupanel"><h3>GPU Pool</h3>)-----",
+<div class="deck pool pool-gpu" id="gpupanel"><h3>GPU Pool)-----",
+gpu_growth,
+r"-----(</h3>)-----",
 gpu_panel,
 r"-----(</div>
-<div class="deck pool-cpu" id="cpupanel"><h3>CPU Pool</h3>)-----",
+<div class="deck pool pool-cpu" id="cpupanel"><h3>CPU Pool)-----",
+cpu_growth,
+r"-----(</h3>)-----",
 cpu_panel,
 r"-----(</div>
 </div>
@@ -349,12 +406,32 @@ const GPU_TIPS={
  kwh:'Energy from sampled GPU power.',
  vram:'Mean VRAM in use, as a share of capacity.'
 };
+const COMMUNITY_TIPS={
+ users:'Distinct researchers who ran at least one job in the period.',
+ groups:'Distinct research groups with at least one job in the period.',
+ cap:'Share of the pool\'s nominal capacity-hours reserved by jobs. Reserved is not the same as busy — see Avg utilization.'
+};
 const ALLM=[...new Set([...DATA.meta.months_cpu,...DATA.meta.months_gpu])].sort();
 function windowFor(v){
   if(v==='past3')return DATA.meta.window3.slice();
   if(v==='past6')return ALLM.slice(-6);
   if(v==='all')return ALLM.slice();
   return [v];
+}
+function keyFor(v){
+  if(v==='past3')return 'P3';
+  if(v==='past6')return 'P6';
+  if(v==='all')return 'ALL';
+  return 'M:'+v;
+}
+function communityFor(key,pool){
+  for(const r of DATA.community)if(r[0]===key&&r[1]===pool)return{users:r[2],groups:r[3]};
+  return{users:0,groups:0};
+}
+function capForWindow(months,pool){
+  const set=new Set(months);let s=0;
+  for(const r of DATA.capacity_monthly)if(r[1]===pool&&set.has(r[0]))s+=r[2];
+  return s;
 }
 function sumCpu(months){
   const set=new Set(months);
@@ -368,15 +445,22 @@ function sumGpu(months){
   for(const r of DATA.gpu_monthly){if(!set.has(r[0]))continue;T.held+=r[2];T.real+=r[3];T.residle_h+=r[4];T.kwh+=r[5];T.vram_h+=r[6];T.fail_h+=r[7];T.wkill_h+=r[8];T.njobs+=r[9];}
   return T;
 }
-function cpuKpiHtml(T){
-  return kpi(fmth(T.held),'Reserved core-h',CPU_TIPS.held)
+function communityTilesHtml(cm,capPct){
+  return kpi(fmt(cm.users),'Researchers served',COMMUNITY_TIPS.users)
+    +kpi(fmt(cm.groups),'Research groups',COMMUNITY_TIPS.groups)
+    +kpi(capPct+'%','Capacity reserved',COMMUNITY_TIPS.cap);
+}
+function cpuKpiHtml(T,cm,capPct){
+  return communityTilesHtml(cm,capPct)
+    +kpi(fmth(T.held),'Reserved core-h',CPU_TIPS.held)
     +kpi(fmth(T.utilized),'Utilized core-h',CPU_TIPS.utilized)
     +kpi((T.held?Math.round(100*T.utilized/T.held):0)+'%','Avg efficiency',CPU_TIPS.eff)
     +kpi(fmt(T.njobs),'Jobs run',CPU_TIPS.jobs)
     +kpi(T.njobs>0?fmt(T.held/T.njobs):'—','Core-h per job',CPU_TIPS.perjob);
 }
-function gpuKpiHtml(T){
-  return kpi(fmth(T.held),'Reserved GPU-h',GPU_TIPS.held)
+function gpuKpiHtml(T,cm,capPct){
+  return communityTilesHtml(cm,capPct)
+    +kpi(fmth(T.held),'Reserved GPU-h',GPU_TIPS.held)
     +kpi(fmth(T.real),'Utilized GPU-h',GPU_TIPS.utilized)
     +kpi((T.held?Math.round(100*T.real/T.held):0)+'%','Avg utilization',GPU_TIPS.busy)
     +kpi(fmt(T.njobs),'Jobs run',GPU_TIPS.jobs)
@@ -399,13 +483,15 @@ function coverageNote(months,poolMonths,poolLabel){
   if(covered.length===0)return {note:'',empty:true};
   return {note:poolLabel+' data: '+rangeText(covered),empty:false};
 }
-function applyWindow(months){
+function applyWindow(months,key){
   const cpuCov=coverageNote(months,DATA.meta.months_cpu,'CPU');
   const gpuCov=coverageNote(months,DATA.meta.months_gpu,'GPU');
   $('#cpu-cov').textContent=cpuCov.note;
   $('#gpu-cov').textContent=gpuCov.note;
-  $('#kpi-cpu').innerHTML=cpuCov.empty?'<div class="nodata">No CPU data for this period</div>':cpuKpiHtml(sumCpu(months));
-  $('#kpi-gpu').innerHTML=gpuCov.empty?'<div class="nodata">No GPU data for this period</div>':gpuKpiHtml(sumGpu(months));
+  const cpuT=sumCpu(months),cpuCapH=capForWindow(months,'cpu');
+  const gpuT=sumGpu(months),gpuCapH=capForWindow(months,'gpu');
+  $('#kpi-cpu').innerHTML=cpuCov.empty?'<div class="nodata">No CPU data for this period</div>':cpuKpiHtml(cpuT,communityFor(key,'cpu'),cpuCapH?Math.round(100*cpuT.held/cpuCapH):0);
+  $('#kpi-gpu').innerHTML=gpuCov.empty?'<div class="nodata">No GPU data for this period</div>':gpuKpiHtml(gpuT,communityFor(key,'gpu'),gpuCapH?Math.round(100*gpuT.held/gpuCapH):0);
   $('#prange').textContent=rangeText(months);
 }
 const SEGS=[['#seg-p3','past3'],['#seg-p6','past6'],['#seg-all','all']];
@@ -415,14 +501,14 @@ SEGS.forEach(([sel])=>{
     SEGS.forEach(([s])=>$(s).classList.remove('on'));
     b.classList.add('on');
     $('#pmonth').value='';
-    applyWindow(windowFor(b.dataset.w));
+    applyWindow(windowFor(b.dataset.w),keyFor(b.dataset.w));
   });
 });
 $('#pmonth').addEventListener('change',()=>{
   const v=$('#pmonth').value;
   if(!v)return;
   SEGS.forEach(([s])=>$(s).classList.remove('on'));
-  applyWindow(windowFor(v));
+  applyWindow(windowFor(v),keyFor(v));
 });
 const tipEl=document.createElement('div');tipEl.id='tip';
 function posTip(x,y){const w=tipEl.offsetWidth,h=tipEl.offsetHeight;let L=x+14,T=y+16;if(L+w>innerWidth-8)L=Math.max(8,x-w-14);if(T+h>innerHeight-8)T=Math.max(8,y-h-16);tipEl.style.left=L+'px';tipEl.style.top=T+'px';}

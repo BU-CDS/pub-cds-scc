@@ -9,9 +9,11 @@
 //
 // Run: module load nodejs/20.12.2 && node scripts/test_page.mjs [index.html]
 // Exit 0 = pass, 1 = wrong, 2 = usage.
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 const SDIR = dirname(fileURLToPath(import.meta.url));
 const path = process.argv[2] || join(SDIR, '..', 'index.html');
@@ -72,8 +74,8 @@ const parentOf = (() => {
 // per-pool CSS), so the lookup key must include both, in source attribute order.
 const P = sel => parentOf[sel] || '(absent)';
 P('div.deckrow') === 'main' ? ok('a deckrow is a direct child of main') : bad('deckrow parent is ' + P('div.deckrow'));
-P('div#gpupanel.deck.pool-gpu') === 'div.deckrow' ? ok('GPU panel sits inside a deckrow') : bad('GPU panel parent is ' + P('div#gpupanel.deck.pool-gpu'));
-P('div#cpupanel.deck.pool-cpu') === 'div.deckrow' ? ok('CPU panel sits inside a deckrow') : bad('CPU panel parent is ' + P('div#cpupanel.deck.pool-cpu'));
+P('div#gpupanel.deck.pool.pool-gpu') === 'div.deckrow' ? ok('GPU panel sits inside a deckrow') : bad('GPU panel parent is ' + P('div#gpupanel.deck.pool.pool-gpu'));
+P('div#cpupanel.deck.pool.pool-cpu') === 'div.deckrow' ? ok('CPU panel sits inside a deckrow') : bad('CPU panel parent is ' + P('div#cpupanel.deck.pool.pool-cpu'));
 P('div#sechead.sechead') === 'main' ? ok('the section-header period control is a direct child of main') : bad('section-header parent is ' + P('div#sechead.sechead'));
 P('div#gpucard.deck') === 'div.deckrow' ? ok('GPU totals card sits inside a deckrow') : bad('GPU totals card parent is ' + P('div#gpucard.deck'));
 P('div#cpucard.deck') === 'div.deckrow' ? ok('CPU totals card sits inside a deckrow') : bad('CPU totals card parent is ' + P('div#cpucard.deck'));
@@ -193,6 +195,66 @@ has(gpuCard, fmt(wGpu.njobs), 'GPU totals: Jobs run matches the recomputed windo
 has(gpuCard, fmth(wGpu.kwh), 'GPU totals: Energy used (kWh) matches the recomputed window3 total');
 has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.vram_h / wGpu.held) : 0) + '%', 'GPU totals: Mean VRAM in use matches recomputed window3');
 
+// ---- 6c. R5.1 community tiles (Researchers served / Research groups / Capacity
+// reserved) lead each totals card, in that order, followed by the existing R3
+// tiles unchanged (GPU 9 tiles total, CPU 8) -- tooltips verbatim, values equal
+// to `community` P3 rows and Σheld/Σcap_h over window3, rounded like every
+// other percent tile ----
+const communityFor = (key, pool) => {
+  const r = data.community.find((row) => row[0] === key && row[1] === pool);
+  return r ? { users: r[2], groups: r[3] } : { users: 0, groups: 0 };
+};
+const capSumFor = (months, pool) => {
+  const set = new Set(months);
+  let s = 0;
+  for (const r of data.capacity_monthly) if (r[1] === pool && set.has(r[0])) s += r[2];
+  return s;
+};
+const pctOf = (num, den) => (den ? Math.round((100 * num) / den) : 0) + '%';
+const COMMUNITY_TIPS = {
+  users: 'Distinct researchers who ran at least one job in the period.',
+  groups: 'Distinct research groups with at least one job in the period.',
+  cap: "Share of the pool's nominal capacity-hours reserved by jobs. Reserved is not the same as busy — see Avg utilization.",
+};
+{
+  const orderCheck = (block, labels, label) => {
+    let last = -1, inOrder = true;
+    for (const l of labels) {
+      const idx = block.indexOf('>' + l + '<');
+      if (idx < 0 || idx < last) { inOrder = false; break; }
+      last = idx;
+    }
+    inOrder ? ok(label + ' tiles appear in the R5.1 order (Researchers served, Research groups, Capacity reserved, then the existing tiles)')
+            : bad(label + ' tiles are missing or out of the expected R5.1 order');
+  };
+  const GPU_TILE_ORDER = ['Researchers served', 'Research groups', 'Capacity reserved', 'Reserved GPU-h', 'Utilized GPU-h', 'Avg utilization', 'Jobs run', 'Energy used (kWh)', 'Mean VRAM in use'];
+  const CPU_TILE_ORDER = ['Researchers served', 'Research groups', 'Capacity reserved', 'Reserved core-h', 'Utilized core-h', 'Avg efficiency', 'Jobs run', 'Core-h per job'];
+  orderCheck(gpuCard, GPU_TILE_ORDER, 'GPU totals card');
+  orderCheck(cpuCard, CPU_TILE_ORDER, 'CPU totals card');
+
+  const gpuTileCount = (gpuCard.match(/class="?kl"?>/g) || []).length;
+  gpuTileCount === 9 ? ok('GPU totals card renders exactly 9 tiles') : bad('GPU totals card renders ' + gpuTileCount + ' tiles, want 9');
+  const cpuTileCount = (cpuCard.match(/class="?kl"?>/g) || []).length;
+  cpuTileCount === 8 ? ok('CPU totals card renders exactly 8 tiles') : bad('CPU totals card renders ' + cpuTileCount + ' tiles, want 8');
+
+  for (const [key, tip] of Object.entries(COMMUNITY_TIPS)) {
+    has(gpuCard, 'data-tip="' + tip + '"', 'GPU card carries the verbatim R5.1 tooltip for ' + key);
+    has(cpuCard, 'data-tip="' + tip + '"', 'CPU card carries the verbatim R5.1 tooltip for ' + key);
+  }
+}
+{
+  const cpuCmtyDefault = communityFor('P3', 'cpu');
+  const gpuCmtyDefault = communityFor('P3', 'gpu');
+  const cpuCapDefault = pctOf(wCpu.held, capSumFor(data.meta.window3, 'cpu'));
+  const gpuCapDefault = pctOf(wGpu.held, capSumFor(data.meta.window3, 'gpu'));
+  has(cpuCard, fmt(cpuCmtyDefault.users), 'CPU totals: Researchers served matches recomputed community P3');
+  has(cpuCard, fmt(cpuCmtyDefault.groups), 'CPU totals: Research groups matches recomputed community P3');
+  has(cpuCard, cpuCapDefault, 'CPU totals: Capacity reserved matches recomputed window3 Σheld/Σcap_h');
+  has(gpuCard, fmt(gpuCmtyDefault.users), 'GPU totals: Researchers served matches recomputed community P3');
+  has(gpuCard, fmt(gpuCmtyDefault.groups), 'GPU totals: Research groups matches recomputed community P3');
+  has(gpuCard, gpuCapDefault, 'GPU totals: Capacity reserved matches recomputed window3 Σheld/Σcap_h');
+}
+
 // ---- 7. functional: execute the page's inline JS and simulate period-control
 // interactions, verifying the KPI cards AND the range text recompute correctly ----
 {
@@ -259,6 +321,27 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.vram_h / wGpu.held) : 0) + '%', 
     for (const [val, label] of gpuDefaultTiles)
       has(els['#kpi-gpu'].innerHTML, val, 'functional: JS recompute for the default window matches the GPU "' + label + '" tile (' + val + ')');
 
+    // click "Past 6 months": the R5.1 tiles must recompute via a community "P6"
+    // lookup and a capacity_monthly sum over P6's months (not just re-sum window3)
+    if (handlers['seg-p6'].length) handlers['seg-p6'].forEach(fn => fn({ target: els['#seg-p6'] }));
+    else bad('functional: the "Past 6 months" segment click handler was never registered');
+    {
+      const allUnionP6 = [...new Set([...data.meta.months_cpu, ...data.meta.months_gpu])].sort();
+      const p6Months = allUnionP6.slice(-6);
+      const wCpuP6 = sumWindow(data.cpu_monthly, p6Months, CPU_FIELDS);
+      const wGpuP6 = sumWindow(data.gpu_monthly, p6Months, GPU_FIELDS);
+      const cpuCmtyP6 = communityFor('P6', 'cpu');
+      const gpuCmtyP6 = communityFor('P6', 'gpu');
+      const cpuCapP6 = pctOf(wCpuP6.held, capSumFor(p6Months, 'cpu'));
+      const gpuCapP6 = pctOf(wGpuP6.held, capSumFor(p6Months, 'gpu'));
+      has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyP6.users), 'functional: "Past 6 months" recomputes CPU Researchers served via the community "P6" lookup');
+      has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyP6.groups), 'functional: "Past 6 months" recomputes CPU Research groups via the community "P6" lookup');
+      has(els['#kpi-cpu'].innerHTML, cpuCapP6, 'functional: "Past 6 months" recomputes CPU Capacity reserved via a capacity_monthly sum over P6');
+      has(els['#kpi-gpu'].innerHTML, fmt(gpuCmtyP6.users), 'functional: "Past 6 months" recomputes GPU Researchers served via the community "P6" lookup');
+      has(els['#kpi-gpu'].innerHTML, fmt(gpuCmtyP6.groups), 'functional: "Past 6 months" recomputes GPU Research groups via the community "P6" lookup');
+      has(els['#kpi-gpu'].innerHTML, gpuCapP6, 'functional: "Past 6 months" recomputes GPU Capacity reserved via a capacity_monthly sum over P6');
+    }
+
     // click "All months": both cards and the range text should update together
     if (handlers['seg-all'].length) handlers['seg-all'].forEach(fn => fn({ target: els['#seg-all'] }));
     else bad('functional: the "All months" segment click handler was never registered');
@@ -269,6 +352,18 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.vram_h / wGpu.held) : 0) + '%', 
     has(els['#kpi-cpu'].innerHTML, wCpuAll.njobs > 0 ? fmt(wCpuAll.held / wCpuAll.njobs) : '—', 'functional: clicking "All months" recomputes CPU Core-h per job correctly');
     has(els['#kpi-gpu'].innerHTML, fmth(wGpuAll.held), 'functional: clicking "All months" recomputes GPU Reserved GPU-h correctly');
     const allUnion = [...new Set([...data.meta.months_cpu, ...data.meta.months_gpu])].sort();
+    {
+      const cpuCmtyAll = communityFor('ALL', 'cpu');
+      const gpuCmtyAll = communityFor('ALL', 'gpu');
+      const cpuCapAll = pctOf(wCpuAll.held, capSumFor(allUnion, 'cpu'));
+      const gpuCapAll = pctOf(wGpuAll.held, capSumFor(allUnion, 'gpu'));
+      has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyAll.users), 'functional: "All months" recomputes CPU Researchers served via the community "ALL" lookup');
+      has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyAll.groups), 'functional: "All months" recomputes CPU Research groups via the community "ALL" lookup');
+      has(els['#kpi-cpu'].innerHTML, cpuCapAll, 'functional: "All months" recomputes CPU Capacity reserved via a capacity_monthly sum over ALL');
+      has(els['#kpi-gpu'].innerHTML, fmt(gpuCmtyAll.users), 'functional: "All months" recomputes GPU Researchers served via the community "ALL" lookup');
+      has(els['#kpi-gpu'].innerHTML, fmt(gpuCmtyAll.groups), 'functional: "All months" recomputes GPU Research groups via the community "ALL" lookup');
+      has(els['#kpi-gpu'].innerHTML, gpuCapAll, 'functional: "All months" recomputes GPU Capacity reserved via a capacity_monthly sum over ALL');
+    }
     const expectAllRange = rangeTextJS(allUnion);
     els['#prange'].textContent === expectAllRange
       ? ok('functional: clicking "All months" updates the range text correctly ("' + expectAllRange + '")')
@@ -298,6 +393,13 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.vram_h / wGpu.held) : 0) + '%', 
     has(els['#kpi-cpu'].innerHTML, fmth(wCpuMonth.held), 'functional: selecting a single month recomputes CPU Reserved core-h correctly');
     has(els['#kpi-cpu'].innerHTML, fmt(wCpuMonth.njobs), 'functional: selecting a single month recomputes CPU Jobs run correctly');
     has(els['#kpi-cpu'].innerHTML, wCpuMonth.njobs > 0 ? fmt(wCpuMonth.held / wCpuMonth.njobs) : '—', 'functional: selecting a single month recomputes CPU Core-h per job correctly');
+    {
+      const cpuCmtyMonth = communityFor('M:' + singleMonth, 'cpu');
+      const cpuCapMonth = pctOf(wCpuMonth.held, capSumFor([singleMonth], 'cpu'));
+      has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyMonth.users), 'functional: selecting a single month recomputes CPU Researchers served via the community "M:' + singleMonth + '" lookup');
+      has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyMonth.groups), 'functional: selecting a single month recomputes CPU Research groups via the community "M:' + singleMonth + '" lookup');
+      has(els['#kpi-cpu'].innerHTML, cpuCapMonth, 'functional: selecting a single month recomputes CPU Capacity reserved via a capacity_monthly sum over that month');
+    }
     const expectMonthRange = rangeTextJS([singleMonth]);
     els['#prange'].textContent === expectMonthRange
       ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
@@ -565,6 +667,97 @@ has(html, 'id="cpu-cov"', 'CPU coverage-note element is present');
   (gpuCovDefault === '' && cpuCovDefault === '')
     ? ok('window3 (the default) is fully covered by both pools, so both coverage notes render empty')
     : bad('default-window coverage notes are not empty: gpu="' + gpuCovDefault + '", cpu="' + cpuCovDefault + '"');
+}
+
+// ---- 20. R5.2 growth note: a pool panel's <h3> ("GPU Pool" / "CPU Pool", not
+// the totals cards) carries a right-aligned, muted <span class="hnote"> reading
+// "{n} GPUs/GPU added in the past 12 months" (GPU) / "{n} nodes/node added in
+// the past 12 months" (CPU), rendered ONLY when that pool's added_12m is > 0;
+// no .hnote at all otherwise. Checked against today's real data (present case:
+// GPU; absent case: CPU) ----
+{
+  const gpuPanelH3 = (gpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1];
+  const cpuPanelH3 = (cpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1];
+  const gpuAdded = Number(data.capacity.gpu.added_12m);
+  const cpuAdded = Number(data.capacity.cpu.added_12m);
+  const gpuWord = gpuAdded === 1 ? 'GPU' : 'GPUs';
+  const cpuWord = cpuAdded === 1 ? 'node' : 'nodes';
+  if (gpuAdded > 0) {
+    has(gpuPanelH3, '<span class="hnote">' + gpuAdded + ' ' + gpuWord + ' added in the past 12 months</span>', 'GPU panel <h3> carries the growth note span (added_12m=' + gpuAdded + ')');
+  } else {
+    not(gpuPanelH3, 'class="hnote"', 'GPU panel <h3> carries no .hnote (added_12m=0)');
+  }
+  if (cpuAdded > 0) {
+    has(cpuPanelH3, '<span class="hnote">' + cpuAdded + ' ' + cpuWord + ' added in the past 12 months</span>', 'CPU panel <h3> carries the growth note span (added_12m=' + cpuAdded + ')');
+  } else {
+    not(cpuPanelH3, 'class="hnote"', 'CPU panel <h3> carries no .hnote (added_12m=0)');
+  }
+  has(styleBlock, '.pool h3{display:flex;justify-content:space-between;align-items:baseline}', '.pool h3 gets the flex rule that right-aligns the growth note');
+  has(styleBlock, '.hnote{font-weight:400;font-size:0.72rem;color:var(--muted);letter-spacing:0;white-space:nowrap}', '.hnote is styled per R5.2 (muted, small, non-wrapping)');
+}
+
+// ---- 20b. fixture check: rebuild the page from a copy of the real data with
+// capacity.cpu.added_12m and capacity.gpu.added_12m swapped, and confirm which
+// panel carries the .hnote span flips with it -- proves the note is genuinely
+// data-driven, not hardcoded to "GPU always present / CPU always absent" ----
+{
+  const tmp = mkdtempSync(join(tmpdir(), 'cluster-page-fixture-'));
+  try {
+    const pageSrc = readFileSync(join(SDIR, '..', 'build_cluster_page.R'), 'utf8');
+    writeFileSync(join(tmp, 'build_cluster_page.R'), pageSrc);
+    const fixture = JSON.parse(JSON.stringify(data));
+    const realCpuAdded = Number(fixture.capacity.cpu.added_12m);
+    const realGpuAdded = Number(fixture.capacity.gpu.added_12m);
+    fixture.capacity.cpu.added_12m = realGpuAdded > 0 ? realGpuAdded : 3;
+    fixture.capacity.gpu.added_12m = 0;
+    mkdirSync(join(tmp, 'output'), { recursive: true });
+    writeFileSync(join(tmp, 'output', 'cluster_data.json'), JSON.stringify(fixture));
+    execFileSync('Rscript', [join(tmp, 'build_cluster_page.R')], { stdio: 'pipe' });
+    const fixtureHtml = readFileSync(join(tmp, 'index.html'), 'utf8');
+    const fGpuPanel = fixtureHtml.slice(fixtureHtml.indexOf('id="gpupanel"'), fixtureHtml.indexOf('id="cpupanel"'));
+    const fCpuPanel = fixtureHtml.slice(fixtureHtml.indexOf('id="cpupanel"'), fixtureHtml.indexOf('id="sechead"'));
+    const fGpuH3 = (fGpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1];
+    const fCpuH3 = (fCpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1];
+    not(fGpuH3, 'class="hnote"', 'fixture (swapped): GPU panel <h3> carries no .hnote once its added_12m is 0');
+    has(fCpuH3, 'class="hnote"', 'fixture (swapped): CPU panel <h3> now carries the .hnote span once its added_12m is > 0 -- the note flips panels with the data');
+  } catch (e) {
+    bad('fixture (swapped) growth-note rebuild failed: ' + (e && e.message ? e.message : e));
+  } finally {
+    try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  }
+}
+
+// ---- 21. negative: no user code or project name from either internal
+// de-identified emit (read fresh at test time, mirroring scripts/gate_cluster.mjs's
+// own leak-check reader) appears anywhere in the page ----
+{
+  const PUB_CPU_CLONE = process.env.PUB_CPU_CLONE || '/usr3/bustaff/mhorn/repos/cpu-cds-scc';
+  const PUB_GPU_CLONE = process.env.PUB_GPU_CLONE || '/usr3/bustaff/mhorn/repos/gpu-cds-scc';
+  const readInternalCodes = (path) => {
+    let d;
+    try { d = JSON.parse(readFileSync(path, 'utf8')); }
+    catch { return { users: [], projects: [] }; }
+    const cols = d.Fcols || [];
+    const ui = cols.indexOf('user'), pi = cols.indexOf('proj');
+    if (ui < 0 || pi < 0) return { users: [], projects: [] };
+    const users = new Set(), projects = new Set();
+    for (const row of d.F || []) {
+      if (row[ui]) users.add(row[ui]);
+      if (row[pi]) projects.add(row[pi]);
+    }
+    return { users: [...users], projects: [...projects] };
+  };
+  const cpuCodes = readInternalCodes(join(PUB_CPU_CLONE, 'output', 'portal_data.json'));
+  const gpuCodes = readInternalCodes(join(PUB_GPU_CLONE, 'output', 'portal_data.json'));
+  const userCodes = [...new Set([...cpuCodes.users, ...gpuCodes.users])];
+  const projectNames = [...new Set([...cpuCodes.projects, ...gpuCodes.projects])];
+  (userCodes.length > 0 && projectNames.length > 0)
+    ? ok('leak-check blocklist loaded from both internal emits (' + userCodes.length + ' user codes, ' + projectNames.length + ' project names)')
+    : bad('leak-check blocklist is empty -- internal emit unreadable/unusable');
+  const leakedUsers = userCodes.filter((u) => html.includes(u));
+  const leakedProjects = projectNames.filter((p) => html.includes(p));
+  leakedUsers.length === 0 ? ok('no internal-emit user code appears anywhere in the page') : bad('user code(s) leaked into the page: ' + leakedUsers.length + ' hit(s)');
+  leakedProjects.length === 0 ? ok('no internal-emit project name appears anywhere in the page') : bad('project name(s) leaked into the page: ' + leakedProjects.length + ' hit(s)');
 }
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');

@@ -4,6 +4,27 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Page: researchers, groups and capacity-reserved tiles; 12-month
+  additions in the panel headers** (2026-09-01, `build_cluster_page.R`,
+  `scripts/test_page.mjs`): every Totals card now leads with three new
+  tiles -- Researchers served, Research groups, Capacity reserved (reserved
+  hours as a share of the pool's nominal capacity-hours for the period) --
+  ahead of the existing tiles, drawn from the new `community` and
+  `capacity_monthly` tables. Each pool panel's header ("GPU Pool" / "CPU
+  Pool") can also carry a right-aligned growth note -- "N GPUs added in the
+  past 12 months" / "N nodes added in the past 12 months" -- shown only
+  when that pool actually added hardware in the past year; a pool with no
+  additions carries no note at all. The server-rendered default view and
+  the page's own period-switching script compute every new number
+  identically -- a lookup by the selected period's window key for the
+  researcher/group counts, a sum over the window's months for capacity --
+  with the same rounding as the existing tiles.
+  Fixture-tested (244/244 total assertions, including a rebuild against a
+  fixture with the two pools' 12-month additions swapped to confirm the
+  header note is genuinely data-driven and not pinned to one pool) and
+  verified end-to-end: `validate.mjs`, the de-id gate over the built page,
+  and the full staged pipeline, all green.
+
 - **Data layer + gate: community counts, nominal capacity-hours and
   12-month additions (contract v3)** (2026-09-01, `scripts/50_cluster_data.R`,
   `scripts/test_cluster_data.R`, `scripts/gate_cluster.mjs`,
