@@ -371,7 +371,7 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
   not(html, 'ft-text', '.ft-text is gone from both markup and CSS');
   has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw);width:100%', '.pagefoot carries width:100% -- in a column-flex body (round 8) a margin:0 auto item is fit-content wide unless width is set, which was shrink-wrapping the footer\'s three zones into a jumbled center block');
 
-  const LIVEWRAP_PREFIX = '<div class="livewrap"><span class="liveupd">Data from SGE accounting and gpustats · updated quarterly · ';
+  const LIVEWRAP_PREFIX = '<div class="livewrap"><span class="liveupd"><a href="https://rcs.bu.edu" target="_blank" rel="noopener">Data from BU SCC</a> · updated quarterly · ';
   const livewrapCount = html.split(LIVEWRAP_PREFIX).length - 1;
   livewrapCount === 1
     ? ok('the livewrap status line occurs exactly once')
@@ -383,6 +383,7 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
     ? ok('livewrap sits between <main> and the first deckrow')
     : bad('livewrap is not positioned between <main> and the first deckrow');
   not(footerBlock, 'updated quarterly', 'the footer no longer carries the data stamp (moved to livewrap)');
+  not(html, 'SGE accounting', '"SGE accounting" no longer appears anywhere (maintainer round 13: renamed to "Data from BU SCC")');
 }
 
 // ---- 16. livewrap must not double-pad (maintainer round 11): it is nested
@@ -396,6 +397,12 @@ has(styleBlock, '.livewrap{margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap
     ? ok('.livewrap carries neither var(--content-pad) nor max-width (main already applies both)')
     : bad('.livewrap still double-pads: ' + livewrapRule);
 }
+
+// ---- 17. status-line stamp copy + link (maintainer round 13): "Data from
+// SGE accounting and gpustats" renamed to "Data from BU SCC", hyperlinked
+// to rcs.bu.edu; " · updated quarterly · <date>" stays plain text ----
+has(styleBlock, '.liveupd a{color:inherit;text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:2px;}', '.liveupd a carries the underline-link styling');
+has(styleBlock, '.liveupd a:hover{color:var(--used);text-decoration-color:currentColor;}', '.liveupd a:hover carries the hover-color rule');
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);

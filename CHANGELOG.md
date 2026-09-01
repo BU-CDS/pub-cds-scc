@@ -4,6 +4,16 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Public page: status-line stamp reworded and hyperlinked to rcs.bu.edu**
+  (2026-08-31, `build_cluster_page.R`, `scripts/test_page.mjs`): the
+  `.livewrap` status line's "Data from SGE accounting and gpustats" opening
+  is now "Data from BU SCC", linked to `https://rcs.bu.edu`; " · updated
+  quarterly · `<date>`" stays plain text unchanged (`deploy.sh`'s stamp grep
+  is unaffected). Fixture-tested (RED against the pre-fix page, GREEN after
+  rebuild, 142/142 total assertions); `validate.mjs` and the de-id gate over
+  the built HTML (both `BU SCC` and the `rcs.bu.edu` URL clear the
+  blocklist) and `scripts/test_deploy.sh` (12/12) unaffected.
+
 - **Public page: footer/main width under the sticky-footer body** (2026-08-31,
   `build_cluster_page.R`, `scripts/test_page.mjs`): since round 8's
   `body{display:flex;flex-direction:column}`, a column-flex item with

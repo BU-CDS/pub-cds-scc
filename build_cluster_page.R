@@ -250,6 +250,8 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 .kpi .kn{font-size:1.188rem;font-weight:bold;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.15;}.kpi .kl{font-size:0.688rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;white-space:nowrap;}.kpi .k[data-tip]{cursor:help;}
 .livewrap{margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;}
 .liveupd{color:var(--text);font-size:0.75rem;white-space:nowrap;}
+.liveupd a{color:inherit;text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:2px;}
+.liveupd a:hover{color:var(--used);text-decoration-color:currentColor;}
 .pagefoot{max-width:min(var(--content-max),98vw);width:100%;margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;}
 .pagefoot .ft-l{flex:1 1 200px;display:flex;align-items:center;}
 .pagefoot .ft-c{flex:0 0 auto;text-align:center;}
@@ -265,7 +267,7 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 plate_uri,
 r"-----(" alt="Boston University"><span class="orgname">Faculty of Computing &amp; Data Sciences</span><span class="hsep">|</span>Research Computing at CDS</h1></div></header>
 <main>
-<div class="livewrap"><span class="liveupd">Data from SGE accounting and gpustats · updated quarterly · )-----",
+<div class="livewrap"><span class="liveupd"><a href="https://rcs.bu.edu" target="_blank" rel="noopener">Data from BU SCC</a> · updated quarterly · )-----",
 d$meta$updated,
 r"-----(</span></div>
 <div class="deckrow">
