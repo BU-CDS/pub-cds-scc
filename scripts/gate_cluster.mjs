@@ -6,11 +6,21 @@
 // cards, node classes, YYYY-MM periods) and the blocklist scans the full text
 // for real hostnames and registry codes regardless of where they land.
 //
+// Contract v3 (2026-09-01) adds: `community` (window_key/pool vocab, monotone
+// P3<=P6<=ALL and every M:<=ALL per pool/metric), `capacity_monthly` (month
+// whitelisted against that pool's own published month list, cap_h > 0),
+// `capacity.*.added_12m` (non-negative integer, <= that pool's total units),
+// meta.contract === 3. The blocklist scan additionally reads every user code
+// and project name out of BOTH internal de-identified emits (CPU's and the
+// NEW GPU one) at gate time and asserts none occurs anywhere in the scanned
+// text -- failure names the category (user code / project), never the value.
+//
 // Usage: node gate_cluster.mjs <cluster_data.json> [built_html]
 //   - called before build with just the json (data-layer gate)
 //   - called after build with the html too (page gate)
-// Vocab + blocklist sources: sibling clones' config/ CSVs (env-overridable,
-// same PUB_CPU_CLONE / PUB_GPU_CLONE vars 50_cluster_data.R reads).
+// Vocab + blocklist sources: sibling clones' config/ CSVs and (contract v3)
+// output/portal_data.json internal emits (env-overridable, same PUB_CPU_CLONE
+// / PUB_GPU_CLONE vars 50_cluster_data.R reads).
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -56,8 +66,32 @@ const HOSTNAMES = [...new Set([
   ...gpuInv.map((r) => r.host), ...gpuHosts.map((r) => r.host),
 ].filter(Boolean))];   // REAL hostnames: blocklisted below, never whitelisted anywhere
 
+// contract v3: every user code and project name from BOTH internal de-identified
+// emits, read fresh at gate time (not from the whitelist configs above) -- this
+// is the blocklist source for the leak check, independent of what 50_cluster_data.R
+// actually did with them.
+const readInternalCodes = (path) => {
+  let d;
+  try { d = JSON.parse(readFileSync(path, 'utf8')); }
+  catch (e) { bad(`cannot read internal emit for leak check: ${path} (${e.message})`); return { users: [], projects: [] }; }
+  const cols = d.Fcols || [];
+  const ui = cols.indexOf('user'), pi = cols.indexOf('proj');
+  if (ui < 0 || pi < 0) { bad(`internal emit missing user/proj columns for leak check: ${path}`); return { users: [], projects: [] }; }
+  const users = new Set(), projects = new Set();
+  for (const row of d.F || []) {
+    if (row[ui]) users.add(row[ui]);
+    if (row[pi]) projects.add(row[pi]);
+  }
+  return { users: [...users], projects: [...projects] };
+};
+const cpuCodes = readInternalCodes(join(PUB_CPU_CLONE, 'output', 'portal_data.json'));
+const gpuCodes = readInternalCodes(join(PUB_GPU_CLONE, 'output', 'portal_data.json'));
+const LEAK_USER_CODES = [...new Set([...cpuCodes.users, ...gpuCodes.users])];
+const LEAK_PROJECT_NAMES = [...new Set([...cpuCodes.projects, ...gpuCodes.projects])];
+
 const PERIOD = /^\d{4}-\d{2}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const POOLS = new Set(['cpu', 'gpu']);
 
 // ---- 1. structural + value whitelist -----------------------------------
 let data;
@@ -66,15 +100,16 @@ try { rawText = readFileSync(dataPath, 'utf8'); data = JSON.parse(rawText); }
 catch (e) { bad(`cannot read/parse ${dataPath}: ${e.message}`); }
 
 if (data) {
-  const TOP = ['meta', 'capacity', 'cpu_monthly', 'gpu_monthly', 'headline'];
+  const TOP = ['meta', 'capacity', 'cpu_monthly', 'gpu_monthly', 'headline', 'community', 'capacity_monthly'];
   for (const k of Object.keys(data)) if (!TOP.includes(k)) bad(`unexpected top-level key: ${k}`);
   for (const k of TOP) if (!(k in data)) bad(`missing top-level key: ${k}`);
 
-  const META_KEYS = ['updated', 'public', 'months_cpu', 'months_gpu', 'window3'];
+  const META_KEYS = ['updated', 'public', 'months_cpu', 'months_gpu', 'window3', 'contract'];
   const meta = data.meta || {};
   for (const k of Object.keys(meta)) if (!META_KEYS.includes(k)) bad(`unexpected meta key: ${k}`);
   if (!DATE.test(meta.updated)) bad(`meta.updated not YYYY-MM-DD: ${meta.updated}`);
   if (meta.public !== true) bad('meta.public is not true');
+  if (Number(meta.contract) !== 3) bad(`meta.contract must be 3: ${meta.contract}`);
   for (const listKey of ['months_cpu', 'months_gpu', 'window3']) {
     for (const m of meta[listKey] || []) if (!PERIOD.test(m)) bad(`meta.${listKey}: bad period: ${m}`);
   }
@@ -84,7 +119,7 @@ if (data) {
   if (window3.size < 1 || window3.size > 3) bad(`meta.window3 has ${window3.size} months (want 1..3)`);
 
   // ---- capacity ----
-  const capCheck = (group, keys, modelSet, serverSet) => {
+  const capCheck = (group, keys, modelSet, serverSet, totalKey) => {
     const c = (data.capacity || {})[group];
     if (!c) { bad(`missing capacity.${group}`); return; }
     for (const k of Object.keys(c)) if (!keys.includes(k)) bad(`unexpected capacity.${group} key: ${k}`);
@@ -97,9 +132,12 @@ if (data) {
       for (const v of [count, per_node, per_node_ram_gb])
         if (!(Number(v) > 0)) bad(`capacity.${group}.types: non-positive count in ${JSON.stringify(row)}`);
     }
+    const total = Number(c[totalKey]);
+    if (!(Number.isInteger(Number(c.added_12m)) && Number(c.added_12m) >= 0 && Number(c.added_12m) <= total))
+      bad(`capacity.${group}.added_12m invalid or exceeds pool total (${totalKey}=${total}): ${c.added_12m}`);
   };
-  capCheck('cpu', ['nodes', 'cores', 'ram_gb', 'types'], CPU_MODELS, CPU_SERVERS);
-  capCheck('gpu', ['nodes', 'gpus', 'vram_gb', 'types'], CARDS, GPU_SERVERS);
+  capCheck('cpu', ['nodes', 'cores', 'ram_gb', 'types', 'added_12m'], CPU_MODELS, CPU_SERVERS, 'cores');
+  capCheck('gpu', ['nodes', 'gpus', 'vram_gb', 'types', 'added_12m'], CARDS, GPU_SERVERS, 'gpus');
 
   // ---- monthly tables ----
   // contract v2 row shape: [month, class, ...numFields] -- numFields named in
@@ -122,6 +160,49 @@ if (data) {
   };
   monthlyCheck(data.cpu_monthly, 'cpu_monthly', NODE_CLASSES, monthsCpu, CPU_NUM_FIELDS);
   monthlyCheck(data.gpu_monthly, 'gpu_monthly', CARDS, monthsGpu, GPU_NUM_FIELDS);
+
+  // ---- community: [window_key, pool, users, groups] ----
+  // window_key vocab mirrors build_cluster_page.R's own windows: "M:<month>" for
+  // each month in meta.months_cpu/months_gpu, plus "P3"/"P6"/"ALL".
+  const COMMUNITY_KEYS = new Set([
+    ...[...monthsCpu, ...monthsGpu].map((m) => `M:${m}`),
+    'P3', 'P6', 'ALL',
+  ]);
+  const commByKeyPool = new Map();
+  for (const row of data.community || []) {
+    if (row.length !== 4) { bad(`community: row length ${row.length} != 4`); continue; }
+    const [key, pool, users, groups] = row;
+    if (!COMMUNITY_KEYS.has(key)) bad(`community: unknown window key: ${key}`);
+    if (!POOLS.has(pool)) bad(`community: unknown pool: ${pool}`);
+    for (const [fname, v] of [['users', users], ['groups', groups]])
+      if (!(Number.isInteger(Number(v)) && Number(v) >= 0)) bad(`community: bad ${fname}: ${v}`);
+    commByKeyPool.set(`${key}|${pool}`, { users: Number(users), groups: Number(groups) });
+  }
+  // monotone per pool: P3 <= P6 <= ALL; every M: <= ALL (both metrics)
+  for (const pool of POOLS) {
+    const p3 = commByKeyPool.get(`P3|${pool}`), p6 = commByKeyPool.get(`P6|${pool}`), all = commByKeyPool.get(`ALL|${pool}`);
+    if (p3 && p6 && !(p3.users <= p6.users && p3.groups <= p6.groups)) bad(`community: P3 > P6 for pool ${pool}`);
+    if (p6 && all && !(p6.users <= all.users && p6.groups <= all.groups)) bad(`community: P6 > ALL for pool ${pool}`);
+    if (all) {
+      for (const [mapKey, v] of commByKeyPool) {
+        if (!mapKey.startsWith('M:') || !mapKey.endsWith(`|${pool}`)) continue;
+        if (!(v.users <= all.users && v.groups <= all.groups)) bad(`community: ${mapKey.split('|')[0]} > ALL for pool ${pool}`);
+      }
+    }
+  }
+
+  // ---- capacity_monthly: [month, pool, cap_h] ----
+  // month whitelisted against that pool's OWN published month list (matches
+  // cpu_monthly/gpu_monthly's own coverage, not the wider community union).
+  for (const row of data.capacity_monthly || []) {
+    if (row.length !== 3) { bad(`capacity_monthly: row length ${row.length} != 3`); continue; }
+    const [m, pool, cap_h] = row;
+    if (!POOLS.has(pool)) bad(`capacity_monthly: unknown pool: ${pool}`);
+    if (!PERIOD.test(m)) bad(`capacity_monthly: bad period: ${m}`);
+    else if (pool === 'cpu' && !monthsCpu.has(m)) bad(`capacity_monthly: period out of meta's cpu month list: ${m}`);
+    else if (pool === 'gpu' && !monthsGpu.has(m)) bad(`capacity_monthly: period out of meta's gpu month list: ${m}`);
+    if (!(Number.isFinite(Number(cap_h)) && Number(cap_h) > 0)) bad(`capacity_monthly: bad cap_h: ${cap_h}`);
+  }
 
   // ---- headline ----
   const HEADLINE_KEYS = ['cpu_core_h', 'gpu_h', 'jobs'];
@@ -168,10 +249,15 @@ for (const [label, text] of texts) {
   if (sccCode) bad(`${label}: scc host pattern found: ${sccCode[0]}`);
   for (const hst of HOSTNAMES)
     if (new RegExp(`\\b${esc(hst)}\\b`, 'i').test(text)) bad(`${label}: real hostname found: ${hst}`);
+  // contract v3: every user code / project name from both internal emits, never echoed
+  if (LEAK_USER_CODES.some((code) => new RegExp(`\\b${esc(code)}\\b`, 'i').test(text)))
+    bad(`${label}: leaked user code (internal-emit leak check)`);
+  if (LEAK_PROJECT_NAMES.some((name) => new RegExp(`\\b${esc(name)}\\b`, 'i').test(text)))
+    bad(`${label}: leaked project name (internal-emit leak check)`);
 }
 
 if (errs.length) {
   for (const e of errs) console.error('gate_cluster: FAIL ' + e);
   process.exit(1);
 }
-console.log(`gate_cluster: PASS — cpu_monthly ${data.cpu_monthly.length} / gpu_monthly ${data.gpu_monthly.length} rows${htmlPath ? ', html scanned' : ''}`);
+console.log(`gate_cluster: PASS — cpu_monthly ${data.cpu_monthly.length} / gpu_monthly ${data.gpu_monthly.length} rows, community ${data.community.length} / capacity_monthly ${data.capacity_monthly.length} rows${htmlPath ? ', html scanned' : ''}`);

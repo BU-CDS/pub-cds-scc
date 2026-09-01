@@ -4,6 +4,33 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Data layer + gate: community counts, nominal capacity-hours and
+  12-month additions (contract v3)** (2026-09-01, `scripts/50_cluster_data.R`,
+  `scripts/test_cluster_data.R`, `scripts/gate_cluster.mjs`,
+  `scripts/test_gate.mjs`): a third read-only input joins the two pool
+  dashboards' data -- the GPU pool's own internal de-identified emit, read
+  ONLY for each month's distinct researcher/group membership (its other
+  tables are never touched). Two new tables: `community` -- distinct
+  researchers served and research groups with at least one job, for every
+  selectable period (each published month, "Past 3 months", "Past 6
+  months", "All months"), per pool; `capacity_monthly` -- nominal
+  capacity-hours per month (cores for the CPU pool, GPUs for the GPU pool),
+  prorated by each hardware unit's install/retirement date. Also adds
+  `added_12m` per pool -- nominal units installed in the past 12 months,
+  not retired. No researcher code or group name reaches any output field,
+  only distinct counts. The gate learns the new tables' vocabulary and
+  monotonicity (Past 3 <= Past 6 <= All, any single month <= All,
+  capacity-hours > 0, additions never exceeding the pool total) and now
+  also reads every researcher code and group name out of both internal
+  emits at gate time, scanning `cluster_data.json` and the built page for a
+  leak (never echoing the value if one is found). Fixture-tested
+  (`test_cluster_data.R`: 29 assertions; `test_gate.mjs`: 42 assertions)
+  and verified against the real emits: Past 3 months (May-Jul 2026) shows
+  120 researchers / 63 groups on the CPU pool and 84 researchers / 36
+  groups on the GPU pool; reserved share of nominal capacity over that
+  window is ~34% (CPU) / ~55% (GPU); 12 GPUs and 0 CPU nodes were added in
+  the past 12 months.
+
 - **CPU panel: memory shown as a column, not a tooltip line**
   (2026-08-31, `build_cluster_page.R`, `scripts/test_page.mjs`): the CPU
   hardware panel gains a fourth column -- CPU, Cores, RAM, Nodes -- showing
