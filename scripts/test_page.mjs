@@ -957,5 +957,30 @@ not(html, 'prefers-color-scheme', 'still no theme machinery');
   } catch (e) { bad('fixture (no GPU weekly rows) rebuild failed: ' + (e && e.message ? e.message : e)); }
 }
 
+// ---- 22c. y-axis tick labels keep the .5 on 2.5-step scales (regression): when
+// nice_ticks() picks a 2 500-unit step (top in [12k,15k)), tick_label() must not
+// turn 2500/7500 into "3k"/"8k" -- decoding the shown labels back to numbers
+// must still be evenly spaced, exactly like the §22 y-tick check ----
+{
+  try {
+    const { html: fh } = buildFixturePage((fixture) => {
+      const gpuWeekly = fixture.weekly.filter((r) => r[1] === 'gpu');
+      if (gpuWeekly.length) gpuWeekly[0][2] = 12000; // forces nice_ticks() to the 2500 step (top = 12480)
+    });
+    const fGpu = fh.slice(fh.indexOf('id="gpuov"'), fh.indexOf('id="cpuov"'));
+    const rhyStart = fGpu.indexOf('<div class="slide" data-s="rhy"');
+    const rhyRest = rhyStart >= 0 ? fGpu.slice(rhyStart) : '';
+    const comIdx = rhyRest.indexOf('<div class="slide" data-s="com"');
+    const rhySlide = comIdx > 0 ? rhyRest.slice(0, comIdx) : rhyRest;
+    has(rhySlide, '>2.5k<', 'fixture (GPU weekly max forced to 12,000): a "2.5k" tick label is rendered, not rounded to "3k"');
+    const yax = (rhySlide.match(/<div class="yax">([\s\S]*?)<\/div>/) || ['', ''])[1];
+    const vals = [...yax.matchAll(/style="bottom:([\d.]+)%">([\d.]+)(k|M)?</g)].filter((m) => m[1] !== '0').map((m) => Number(m[2]) * (m[3] === 'M' ? 1e6 : m[3] === 'k' ? 1e3 : 1));
+    const diffs = vals.slice(1).map((v, i) => v - vals[i]);
+    (vals.length >= 3 && vals.length <= 5 && diffs.every((d) => Math.abs(d - diffs[0]) < 1e-6))
+      ? ok('fixture (GPU weekly max forced to 12,000): GPU rhythm y ticks decode evenly spaced (' + vals.join(',') + ')')
+      : bad('fixture (GPU weekly max forced to 12,000): GPU rhythm y ticks not evenly spaced: ' + JSON.stringify(vals));
+  } catch (e) { bad('fixture (GPU weekly max forced to 12,000) rebuild failed: ' + (e && e.message ? e.message : e)); }
+}
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);

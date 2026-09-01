@@ -287,8 +287,8 @@ compact <- function(x) {   # 1.41 M / 261 k / 950 (R6.6)
 }
 tick_label <- function(x) {   # axis ticks: 150k / 1.2M (no space, one decimal)
   if (x >= 1e6) return(paste0(sub("\\.0$", "", sprintf("%.1f", x / 1e6)), "M"))
-  if (x >= 1e3) return(paste0(jround(x / 1e3), "k"))
-  fmt(x)
+  if (x >= 1e3) return(paste0(sub("\\.0$", "", sprintf("%.1f", x / 1e3)), "k"))
+  sub("\\.0$", "", sprintf("%.1f", x))
 }
 nice_ticks <- function(mx) {   # top = 1.04 x max; the smallest step in {1,2,2.5,5}x10^n giving <= 5 lines below top
   top <- max(mx, 1) * 1.04
