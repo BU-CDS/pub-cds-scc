@@ -4,6 +4,27 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Public page: totals cards show positive/neutral counterparts, no
+  negative-connotation tiles** (2026-08-31, `build_cluster_page.R`,
+  `scripts/test_page.mjs`): the GPU and CPU Totals cards no longer show
+  Under-Utilized, Non-Utilized, on hard-failed jobs, on wall-killed jobs, or
+  Walltime Accuracy -- every tile now reads as a positive or neutral fact
+  about the period. GPU Totals (6 tiles): Reserved GPU-h, Utilized GPU-h
+  (the same kernel-active hours the Avg utilization percentage is built
+  from), Avg utilization, Jobs run, Energy used (kWh), Mean VRAM in use. CPU
+  Totals (5 tiles): Reserved core-h, Utilized core-h, Avg efficiency, Jobs
+  run, and a new tile, Core-h per job (Reserved core-hours divided by Jobs
+  run, rounded to whole hours -- the typical reservation size; reads "–"
+  when there were no jobs). Tooltips were rewritten alongside the tiles;
+  none mention failures, wall-kills, or "lower is better" framing anymore.
+  R and the inline JS compute every tile identically, verified by executing
+  the embedded script and confirming its recompute matches the
+  server-rendered default tile for tile, and that picking "All months" or a
+  single month recomputes Jobs run and Core-h per job correctly alongside
+  the rest. Fixture-tested (185/185 total assertions, up from 157) and run
+  through `validate.mjs`, the de-id gate over the built page, and the full
+  staged pipeline, all green.
+
 - **Data layer: window3 must end at the calendar month just closed**
   (2026-08-31, `scripts/50_cluster_data.R`, `scripts/test_cluster_data.R`):
   `window3` previously trusted `intersect(months_cpu, months_gpu)` verbatim --

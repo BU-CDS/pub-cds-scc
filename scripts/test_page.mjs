@@ -142,7 +142,8 @@ for (const m of [...new Set([...data.meta.months_cpu.slice(-2), ...data.meta.mon
     : bad('range text is "' + got + '", expected "' + expected + '" (window3)');
 }
 
-// ---- 6. two KPI totals cards with the portals' tile labels, GPU left / CPU right ----
+// ---- 6. two KPI totals cards, positive/neutral tile set (no negative-
+// connotation counterparts), GPU left / CPU right ----
 const sliceFrom = (startMarker, endMarkers) => {
   const s = html.indexOf(startMarker);
   if (s < 0) return '';
@@ -155,10 +156,17 @@ const cpuCard = sliceFrom('id="cpucard"', ['</main>']);
 gpuCard && cpuCard ? ok('both KPI totals cards were located in the page') : bad('could not locate both KPI totals cards');
 has(gpuCard, 'GPU Totals', 'GPU card carries its "GPU Totals" heading');
 has(cpuCard, 'CPU Totals', 'CPU card carries its "CPU Totals" heading');
-for (const lbl of ['Held core-h', 'Avg Efficiency', 'Under-utilized core-h', 'Utilized core-h', 'Jobs', 'Walltime Accuracy', 'on hard-failed jobs', 'on wall-killed jobs'])
+for (const lbl of ['Reserved core-h', 'Utilized core-h', 'Avg efficiency', 'Jobs run', 'Core-h per job'])
   has(cpuCard, lbl, 'CPU totals card shows the "' + lbl + '" tile');
-for (const lbl of ['Held GPU-h', 'Avg Utilization', 'Under-Utilized GPU-h', 'Non-Utilized GPU-h', 'Energy kWh', 'Mean VRAM', 'on hard-failed jobs', 'on wall-killed jobs'])
+for (const lbl of ['Reserved GPU-h', 'Utilized GPU-h', 'Avg utilization', 'Jobs run', 'Energy used (kWh)', 'Mean VRAM in use'])
   has(gpuCard, lbl, 'GPU totals card shows the "' + lbl + '" tile');
+
+// negative assertion: none of the removed tile labels or banned tooltip
+// phrases may appear anywhere on the page
+for (const lbl of ['Under-Utilized', 'Under-utilized', 'Non-Utilized', 'on hard-failed jobs', 'on wall-killed jobs', 'Walltime Accuracy'])
+  not(html, lbl, 'removed tile label "' + lbl + '" no longer appears anywhere');
+for (const phrase of ['lower is better', 'Lower is better', 'worst waste', 'broke', 'killed'])
+  not(html, phrase, 'banned tooltip phrase "' + phrase + '" does not appear anywhere');
 
 // ---- 6b. the server-rendered DEFAULT window figures are actually correct, not just present --
 const fmt = n => Math.round(n).toLocaleString('en-US');
@@ -173,10 +181,17 @@ const sumWindow = (rows, months, fields) => {
 };
 const wCpu = sumWindow(data.cpu_monthly, data.meta.window3, CPU_FIELDS);
 const wGpu = sumWindow(data.gpu_monthly, data.meta.window3, GPU_FIELDS);
-has(cpuCard, fmth(wCpu.held), 'CPU totals: Held core-h matches the recomputed window3 total');
-has(cpuCard, (wCpu.held ? Math.round(100 * wCpu.utilized / wCpu.held) : 0) + '%', 'CPU totals: Avg Efficiency % matches recomputed window3');
-has(gpuCard, fmth(wGpu.held), 'GPU totals: Held GPU-h matches the recomputed window3 total');
-has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'GPU totals: Avg Utilization % matches recomputed window3');
+has(cpuCard, fmth(wCpu.held), 'CPU totals: Reserved core-h matches the recomputed window3 total');
+has(cpuCard, fmth(wCpu.utilized), 'CPU totals: Utilized core-h matches the recomputed window3 total');
+has(cpuCard, (wCpu.held ? Math.round(100 * wCpu.utilized / wCpu.held) : 0) + '%', 'CPU totals: Avg efficiency matches recomputed window3');
+has(cpuCard, fmt(wCpu.njobs), 'CPU totals: Jobs run matches the recomputed window3 total');
+has(cpuCard, wCpu.njobs > 0 ? fmt(wCpu.held / wCpu.njobs) : '—', 'CPU totals: Core-h per job matches the recomputed window3 value');
+has(gpuCard, fmth(wGpu.held), 'GPU totals: Reserved GPU-h matches the recomputed window3 total');
+has(gpuCard, fmth(wGpu.real), 'GPU totals: Utilized GPU-h matches the recomputed window3 total');
+has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'GPU totals: Avg utilization matches recomputed window3');
+has(gpuCard, fmt(wGpu.njobs), 'GPU totals: Jobs run matches the recomputed window3 total');
+has(gpuCard, fmth(wGpu.kwh), 'GPU totals: Energy used (kWh) matches the recomputed window3 total');
+has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.vram_h / wGpu.held) : 0) + '%', 'GPU totals: Mean VRAM in use matches recomputed window3');
 
 // ---- 7. functional: execute the page's inline JS and simulate period-control
 // interactions, verifying the KPI cards AND the range text recompute correctly ----
@@ -218,13 +233,41 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
     if (!scripts.trim()) throw new Error('no <script> content found');
     new Function('document', 'window', 'localStorage', scripts)(document, window, localStorage);
 
+    // click "Past 3 months" (the default) explicitly: the JS recompute must
+    // match the server-rendered default exactly, tile for tile (all 11 tiles)
+    if (handlers['seg-p3'].length) handlers['seg-p3'].forEach(fn => fn({ target: els['#seg-p3'] }));
+    else bad('functional: the "Past 3 months" segment click handler was never registered');
+    const wCpuDefault = sumWindow(data.cpu_monthly, data.meta.window3, CPU_FIELDS);
+    const wGpuDefault = sumWindow(data.gpu_monthly, data.meta.window3, GPU_FIELDS);
+    const cpuDefaultTiles = [
+      [fmth(wCpuDefault.held), 'Reserved core-h'],
+      [fmth(wCpuDefault.utilized), 'Utilized core-h'],
+      [(wCpuDefault.held ? Math.round(100 * wCpuDefault.utilized / wCpuDefault.held) : 0) + '%', 'Avg efficiency'],
+      [fmt(wCpuDefault.njobs), 'Jobs run'],
+      [wCpuDefault.njobs > 0 ? fmt(wCpuDefault.held / wCpuDefault.njobs) : '—', 'Core-h per job'],
+    ];
+    for (const [val, label] of cpuDefaultTiles)
+      has(els['#kpi-cpu'].innerHTML, val, 'functional: JS recompute for the default window matches the CPU "' + label + '" tile (' + val + ')');
+    const gpuDefaultTiles = [
+      [fmth(wGpuDefault.held), 'Reserved GPU-h'],
+      [fmth(wGpuDefault.real), 'Utilized GPU-h'],
+      [(wGpuDefault.held ? Math.round(100 * wGpuDefault.real / wGpuDefault.held) : 0) + '%', 'Avg utilization'],
+      [fmt(wGpuDefault.njobs), 'Jobs run'],
+      [fmth(wGpuDefault.kwh), 'Energy used (kWh)'],
+      [(wGpuDefault.held ? Math.round(100 * wGpuDefault.vram_h / wGpuDefault.held) : 0) + '%', 'Mean VRAM in use'],
+    ];
+    for (const [val, label] of gpuDefaultTiles)
+      has(els['#kpi-gpu'].innerHTML, val, 'functional: JS recompute for the default window matches the GPU "' + label + '" tile (' + val + ')');
+
     // click "All months": both cards and the range text should update together
     if (handlers['seg-all'].length) handlers['seg-all'].forEach(fn => fn({ target: els['#seg-all'] }));
     else bad('functional: the "All months" segment click handler was never registered');
     const wCpuAll = sumWindow(data.cpu_monthly, data.meta.months_cpu, CPU_FIELDS);
     const wGpuAll = sumWindow(data.gpu_monthly, data.meta.months_gpu, GPU_FIELDS);
-    has(els['#kpi-cpu'].innerHTML, fmth(wCpuAll.held), 'functional: clicking "All months" recomputes CPU Held core-h correctly');
-    has(els['#kpi-gpu'].innerHTML, fmth(wGpuAll.held), 'functional: clicking "All months" recomputes GPU Held GPU-h correctly');
+    has(els['#kpi-cpu'].innerHTML, fmth(wCpuAll.held), 'functional: clicking "All months" recomputes CPU Reserved core-h correctly');
+    has(els['#kpi-cpu'].innerHTML, fmt(wCpuAll.njobs), 'functional: clicking "All months" recomputes CPU Jobs run correctly');
+    has(els['#kpi-cpu'].innerHTML, wCpuAll.njobs > 0 ? fmt(wCpuAll.held / wCpuAll.njobs) : '—', 'functional: clicking "All months" recomputes CPU Core-h per job correctly');
+    has(els['#kpi-gpu'].innerHTML, fmth(wGpuAll.held), 'functional: clicking "All months" recomputes GPU Reserved GPU-h correctly');
     const allUnion = [...new Set([...data.meta.months_cpu, ...data.meta.months_gpu])].sort();
     const expectAllRange = rangeTextJS(allUnion);
     els['#prange'].textContent === expectAllRange
@@ -241,7 +284,7 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
     els['#gpu-cov'].textContent === expectGpuCovAll
       ? ok('functional: "All months" shows the GPU coverage note ("' + expectGpuCovAll + '")')
       : bad('functional: GPU coverage note after "All months" is "' + els['#gpu-cov'].textContent + '", expected "' + expectGpuCovAll + '"');
-    has(els['#kpi-gpu'].innerHTML, 'Held GPU-h', 'functional: GPU tiles still render for "All months" (partial coverage, not replaced)');
+    has(els['#kpi-gpu'].innerHTML, 'Reserved GPU-h', 'functional: GPU tiles still render for "All months" (partial coverage, not replaced)');
     els['#cpu-cov'].textContent === ''
       ? ok('functional: CPU coverage note stays empty for "All months" (CPU\'s own series covers the whole union)')
       : bad('functional: CPU coverage note should be empty for "All months", got "' + els['#cpu-cov'].textContent + '"');
@@ -252,7 +295,9 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
     if (handlers.pmonth.length) handlers.pmonth.forEach(fn => fn({ target: els['#pmonth'] }));
     else bad('functional: the month-select change handler was never registered');
     const wCpuMonth = sumWindow(data.cpu_monthly, [singleMonth], CPU_FIELDS);
-    has(els['#kpi-cpu'].innerHTML, fmth(wCpuMonth.held), 'functional: selecting a single month recomputes CPU Held core-h correctly');
+    has(els['#kpi-cpu'].innerHTML, fmth(wCpuMonth.held), 'functional: selecting a single month recomputes CPU Reserved core-h correctly');
+    has(els['#kpi-cpu'].innerHTML, fmt(wCpuMonth.njobs), 'functional: selecting a single month recomputes CPU Jobs run correctly');
+    has(els['#kpi-cpu'].innerHTML, wCpuMonth.njobs > 0 ? fmt(wCpuMonth.held / wCpuMonth.njobs) : '—', 'functional: selecting a single month recomputes CPU Core-h per job correctly');
     const expectMonthRange = rangeTextJS([singleMonth]);
     els['#prange'].textContent === expectMonthRange
       ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
@@ -268,7 +313,7 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
     els['#gpu-cov'].textContent === ''
       ? ok('functional: GPU coverage note stays empty when GPU has no data at all (the "no data" tile message carries it instead)')
       : bad('functional: GPU coverage note should be empty (not a caption) when GPU has zero data, got "' + els['#gpu-cov'].textContent + '"');
-    has(els['#kpi-cpu'].innerHTML, 'Held core-h', 'functional: CPU tiles still render normally for its own earliest month');
+    has(els['#kpi-cpu'].innerHTML, 'Reserved core-h', 'functional: CPU tiles still render normally for its own earliest month');
   } catch (e) {
     bad('functional: page JS threw during simulated period-control interaction -- ' + (e && e.message ? e.message : e));
   }

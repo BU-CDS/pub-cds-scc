@@ -138,9 +138,12 @@ cpu_panel <- panel_html(d$capacity$cpu$types, "cpu")
 # strings). Server-rendered here for the default trailing-3-month window
 # (meta.window3) so the page means something before/without JS; the page's
 # own inline JS repeats this arithmetic verbatim to recompute on a period
-# change. Tile labels/tips lifted verbatim from the portals' own kpi() helper
-# and TIPS object (CPU: build_cpu_portal.R ~L465-484,575; GPU:
-# build_gpu_portal.R ~L544-570,659). ----
+# change. The kpi() tile helper is lifted from the portals; the tile set
+# itself is a deliberate revision for this public page -- every tile reads
+# positive/neutral (Reserved, Utilized, Avg efficiency/utilization, Jobs
+# run, Energy used, Mean VRAM in use, Core-h per job), with no
+# negative-connotation counterpart (no Under-/Non-Utilized, no failed/
+# wall-killed shares, no Walltime Accuracy). ----
 as_mat <- function(x, ncol) if (is.null(dim(x))) matrix(x, ncol = ncol, byrow = TRUE) else x
 cm <- as_mat(d$cpu_monthly, 9)   # month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h
 gm <- as_mat(d$gpu_monthly, 10)  # month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs
@@ -159,22 +162,18 @@ sum_gpu_window <- function(months) {
 }
 
 CPU_TIPS <- list(
-  held = "Core-hours reserved by jobs: cores held × hours run, busy or not. The denominator of everything.",
-  utilized = "CPU time the jobs actually consumed (the accounting cpu field), capped per job at <b>Held</b>. Higher is better.",
-  under = "<b>Held</b> core-hours the jobs left unused: <b>Held</b> − <b>Utilized</b>. Lower is better; some is unavoidable.",
-  eff = "CPU time used over CPU time reserved.",
-  wallacc = "Requested walltime actually used, over jobs with an <b>explicit</b> h_rt only — not the injected 12h default. Σused ÷ Σrequested; an explicit 12h request is indistinguishable from the default.",
-  fail = "How much <b>Held</b> time went to jobs that broke? Hard failures only. Lower is better.",
-  wkill = "How much <b>Held</b> time went to jobs SGE killed at their own h_rt. Not good or bad on its own — on the 12h scavenger queues it often just means hitting the scavenger ceiling."
+  held = "Core-hours reserved by jobs: cores held × hours run.",
+  utilized = "CPU time the jobs consumed.",
+  eff = "Utilized over Reserved.",
+  jobs = "Jobs that ran on the pool in the period.",
+  perjob = "Reserved core-hours per job — the typical reservation size."
 )
 GPU_TIPS <- list(
-  held = "Total GPU hours held/reserved by jobs.",
-  busy = "How hard did the GPU(s) work? <b>Utilized</b> over <b>Held</b>. Higher is better.",
-  idle = "How much held time had a process but idle kernels? <b>Held</b> − <b>Utilized</b> − <b>Non-Utilized</b>. Lower is better; some is unavoidable.",
-  residle = "Was the GPU held with no process at all? Each no-process sample counts its full 5 minutes. The worst waste. Lower is better.",
+  held = "GPU-hours reserved by jobs over the period: GPUs held × hours run.",
+  utilized = "GPU-hours with active kernels, from sampled utilization.",
+  busy = "Utilized over Reserved.",
+  jobs = "Jobs that ran on the pool in the period.",
   kwh = "Energy from sampled GPU power.",
-  fail = "How much <b>Held</b> time went to jobs that broke? Hard failures only. Lower is better.",
-  wkill = "How much <b>Held</b> time went to jobs that hit their h_rt wall. Not good or bad on its own.",
   vram = "Mean VRAM in use, as a share of capacity."
 )
 
@@ -183,26 +182,21 @@ kpi_tile <- function(n, l, t = "") sprintf('<div class="k"%s><div class="kl">%s<
 
 cpu_kpi_html <- function(T) {
   paste0(
-    kpi_tile(fmth(T$held), "Held core-h", CPU_TIPS$held),
-    kpi_tile(pct(T$utilized, T$held), "Avg Efficiency %", CPU_TIPS$eff),
-    kpi_tile(fmth(max(0, T$held - T$utilized)), "Under-utilized core-h", CPU_TIPS$under),
+    kpi_tile(fmth(T$held), "Reserved core-h", CPU_TIPS$held),
     kpi_tile(fmth(T$utilized), "Utilized core-h", CPU_TIPS$utilized),
-    kpi_tile(fmt(T$njobs), "Jobs #"),
-    kpi_tile(if (T$wa_req_h > 0) paste0(jround(100 * T$wa_used_h / T$wa_req_h), "%") else "—", "Walltime Accuracy %", CPU_TIPS$wallacc),
-    kpi_tile(pct(T$fail_h, T$held), "on hard-failed jobs", CPU_TIPS$fail),
-    kpi_tile(pct(T$wkill_h, T$held), "on wall-killed jobs", CPU_TIPS$wkill)
+    kpi_tile(pct(T$utilized, T$held), "Avg efficiency", CPU_TIPS$eff),
+    kpi_tile(fmt(T$njobs), "Jobs run", CPU_TIPS$jobs),
+    kpi_tile(if (T$njobs > 0) fmt(T$held / T$njobs) else "—", "Core-h per job", CPU_TIPS$perjob)
   )
 }
 gpu_kpi_html <- function(T) {
   paste0(
-    kpi_tile(fmth(T$held), "Held GPU-h", GPU_TIPS$held),
-    kpi_tile(pct(T$real, T$held), "Avg Utilization", GPU_TIPS$busy),
-    kpi_tile(fmth(max(0, T$held - T$real - T$residle_h)), "Under-Utilized GPU-h", GPU_TIPS$idle),
-    kpi_tile(fmth(T$residle_h), "Non-Utilized GPU-h", GPU_TIPS$residle),
-    kpi_tile(fmth(T$kwh), "Energy kWh", GPU_TIPS$kwh),
-    kpi_tile(pct(T$fail_h, T$held), "on hard-failed jobs", GPU_TIPS$fail),
-    kpi_tile(pct(T$wkill_h, T$held), "on wall-killed jobs", GPU_TIPS$wkill),
-    kpi_tile(pct(T$vram_h, T$held), "Mean VRAM", GPU_TIPS$vram)
+    kpi_tile(fmth(T$held), "Reserved GPU-h", GPU_TIPS$held),
+    kpi_tile(fmth(T$real), "Utilized GPU-h", GPU_TIPS$utilized),
+    kpi_tile(pct(T$real, T$held), "Avg utilization", GPU_TIPS$busy),
+    kpi_tile(fmt(T$njobs), "Jobs run", GPU_TIPS$jobs),
+    kpi_tile(fmth(T$kwh), "Energy used (kWh)", GPU_TIPS$kwh),
+    kpi_tile(pct(T$vram_h, T$held), "Mean VRAM in use", GPU_TIPS$vram)
   )
 }
 
@@ -337,22 +331,18 @@ function fmt(x){return Math.round(x).toLocaleString('en-US');}
 function fmth(x){if(x==null)return '—';if(x<=0)return '0';if(x<1)return '&lt;1';return Math.round(x).toLocaleString('en-US');}
 const kpi=(n,l,t)=>'<div class=k'+(t?' data-tip="'+t+'"':'')+'><div class=kl>'+l+'</div><div class=kn>'+n+'</div></div>';
 const CPU_TIPS={
- held:'Core-hours reserved by jobs: cores held × hours run, busy or not. The denominator of everything.',
- utilized:'CPU time the jobs actually consumed (the accounting cpu field), capped per job at <b>Held</b>. Higher is better.',
- under:'<b>Held</b> core-hours the jobs left unused: <b>Held</b> − <b>Utilized</b>. Lower is better; some is unavoidable.',
- eff:'CPU time used over CPU time reserved.',
- wallacc:'Requested walltime actually used, over jobs with an <b>explicit</b> h_rt only — not the injected 12h default. Σused ÷ Σrequested; an explicit 12h request is indistinguishable from the default.',
- fail:'How much <b>Held</b> time went to jobs that broke? Hard failures only. Lower is better.',
- wkill:'How much <b>Held</b> time went to jobs SGE killed at their own h_rt. Not good or bad on its own — on the 12h scavenger queues it often just means hitting the scavenger ceiling.'
+ held:'Core-hours reserved by jobs: cores held × hours run.',
+ utilized:'CPU time the jobs consumed.',
+ eff:'Utilized over Reserved.',
+ jobs:'Jobs that ran on the pool in the period.',
+ perjob:'Reserved core-hours per job — the typical reservation size.'
 };
 const GPU_TIPS={
- held:'Total GPU hours held/reserved by jobs.',
- busy:'How hard did the GPU(s) work? <b>Utilized</b> over <b>Held</b>. Higher is better.',
- idle:'How much held time had a process but idle kernels? <b>Held</b> − <b>Utilized</b> − <b>Non-Utilized</b>. Lower is better; some is unavoidable.',
- residle:'Was the GPU held with no process at all? Each no-process sample counts its full 5 minutes. The worst waste. Lower is better.',
+ held:'GPU-hours reserved by jobs over the period: GPUs held × hours run.',
+ utilized:'GPU-hours with active kernels, from sampled utilization.',
+ busy:'Utilized over Reserved.',
+ jobs:'Jobs that ran on the pool in the period.',
  kwh:'Energy from sampled GPU power.',
- fail:'How much <b>Held</b> time went to jobs that broke? Hard failures only. Lower is better.',
- wkill:'How much <b>Held</b> time went to jobs that hit their h_rt wall. Not good or bad on its own.',
  vram:'Mean VRAM in use, as a share of capacity.'
 };
 const ALLM=[...new Set([...DATA.meta.months_cpu,...DATA.meta.months_gpu])].sort();
@@ -375,24 +365,19 @@ function sumGpu(months){
   return T;
 }
 function cpuKpiHtml(T){
-  return kpi(fmth(T.held),'Held core-h',CPU_TIPS.held)
-    +kpi((T.held?Math.round(100*T.utilized/T.held):0)+'%','Avg Efficiency %',CPU_TIPS.eff)
-    +kpi(fmth(Math.max(0,T.held-T.utilized)),'Under-utilized core-h',CPU_TIPS.under)
+  return kpi(fmth(T.held),'Reserved core-h',CPU_TIPS.held)
     +kpi(fmth(T.utilized),'Utilized core-h',CPU_TIPS.utilized)
-    +kpi(fmt(T.njobs),'Jobs #','')
-    +kpi(T.wa_req_h>0?Math.round(100*T.wa_used_h/T.wa_req_h)+'%':'—','Walltime Accuracy %',CPU_TIPS.wallacc)
-    +kpi((T.held?Math.round(100*T.fail_h/T.held):0)+'%','on hard-failed jobs',CPU_TIPS.fail)
-    +kpi((T.held?Math.round(100*T.wkill_h/T.held):0)+'%','on wall-killed jobs',CPU_TIPS.wkill);
+    +kpi((T.held?Math.round(100*T.utilized/T.held):0)+'%','Avg efficiency',CPU_TIPS.eff)
+    +kpi(fmt(T.njobs),'Jobs run',CPU_TIPS.jobs)
+    +kpi(T.njobs>0?fmt(T.held/T.njobs):'—','Core-h per job',CPU_TIPS.perjob);
 }
 function gpuKpiHtml(T){
-  return kpi(fmth(T.held),'Held GPU-h',GPU_TIPS.held)
-    +kpi((T.held?Math.round(100*T.real/T.held):0)+'%','Avg Utilization',GPU_TIPS.busy)
-    +kpi(fmth(Math.max(0,T.held-T.real-T.residle_h)),'Under-Utilized GPU-h',GPU_TIPS.idle)
-    +kpi(fmth(T.residle_h),'Non-Utilized GPU-h',GPU_TIPS.residle)
-    +kpi(fmth(T.kwh),'Energy kWh',GPU_TIPS.kwh)
-    +kpi((T.held?Math.round(100*T.fail_h/T.held):0)+'%','on hard-failed jobs',GPU_TIPS.fail)
-    +kpi((T.held?Math.round(100*T.wkill_h/T.held):0)+'%','on wall-killed jobs',GPU_TIPS.wkill)
-    +kpi((T.held?Math.round(100*T.vram_h/T.held):0)+'%','Mean VRAM',GPU_TIPS.vram);
+  return kpi(fmth(T.held),'Reserved GPU-h',GPU_TIPS.held)
+    +kpi(fmth(T.real),'Utilized GPU-h',GPU_TIPS.utilized)
+    +kpi((T.held?Math.round(100*T.real/T.held):0)+'%','Avg utilization',GPU_TIPS.busy)
+    +kpi(fmt(T.njobs),'Jobs run',GPU_TIPS.jobs)
+    +kpi(fmth(T.kwh),'Energy used (kWh)',GPU_TIPS.kwh)
+    +kpi((T.held?Math.round(100*T.vram_h/T.held):0)+'%','Mean VRAM in use',GPU_TIPS.vram);
 }
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function monthLabel(m,withYear){return MON[+m.slice(5,7)-1]+(withYear?' '+m.slice(0,4):'');}
