@@ -2,9 +2,11 @@
 
 Public, self-contained page for the CDS buy-in pools on the BU Shared
 Computing Cluster: the CPU pool and the GPU pool side by side — the hardware
-in each (every node and card, drawn at capacity), and usage totals for a
-selectable period (default: the trailing three complete months). One
-`index.html`, one inline script, no server, no tracking. Updates quarterly.
+in each (every node and card, drawn at capacity), usage totals for a
+selectable period (default: the trailing three complete months), and three
+over-time charts per pool (monthly volume against capacity, weekly rhythm,
+researchers and groups). One `index.html`, one inline script, no server, no
+tracking. Updates quarterly.
 
 ## View it
 
@@ -21,10 +23,13 @@ git show origin/page:index.html > page.html
 `refresh_public.sh` runs the whole thing under a lock and publishes only if
 every step is green:
 
-1. `scripts/50_cluster_data.R` — reads the two pool dashboards' already
-   de-identified emitted data (read-only; locations via `PUB_CPU_CLONE` /
-   `PUB_GPU_CLONE`), keeps month-grain aggregates for complete months, derives
-   pool capacity from the inventory records, writes `output/cluster_data.json`.
+1. `scripts/50_cluster_data.R` — reads the two pool dashboards' internal,
+   already de-identified emitted data (read-only; locations via
+   `PUB_CPU_CLONE` / `PUB_GPU_CLONE`), keeps month-grain aggregates for
+   complete months and week-grain reserved hours for complete weeks, derives
+   pool capacity from the inventory records, counts distinct researchers and
+   groups, and writes `output/cluster_data.json`. No user code, project name
+   or host name survives the aggregation.
 2. `scripts/gate_cluster.mjs` — whitelist / blocklist / conservation gate over
    that JSON: every model, card, class and period must be on the allow-list,
    no host names or registry codes anywhere, totals must reconcile.

@@ -4,6 +4,11 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Docs: inputs and cadence after the GPU-source change** (2026-09-01,
+  `README.md`): the page's description gains the over-time charts; the
+  pipeline description names the two internal de-identified emits as the
+  only data inputs.
+
 - **Page: "Over time" charts under the totals** (2026-09-01,
   `build_cluster_page.R`, `validate.mjs`, `scripts/test_page.mjs`): a new
   section with one chart deck per pool (GPU Activity / CPU Activity) and
