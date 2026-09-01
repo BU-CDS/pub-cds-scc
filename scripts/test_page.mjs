@@ -297,7 +297,8 @@ has(styleBlock, '.pool-cpu{--lblw:130px;--valw:64px', 'CPU panel keeps its wider
 
 // ---- 13. sticky footer + wide-screen growth (maintainer round 6) ----
 has(styleBlock, 'body{display:flex;flex-direction:column', 'body is a flex column (sticky-footer pattern)');
-has(styleBlock, 'main{max-width:min(var(--content-max),98vw);margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto', 'main grows to fill the flex column (flex:1 0 auto)');
+has(styleBlock, 'main{max-width:min(var(--content-max),98vw);width:100%;margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto', 'main grows to fill the flex column (flex:1 0 auto)');
+has(styleBlock, 'main{max-width:min(var(--content-max),98vw);width:100%', 'main carries width:100% -- in a column-flex body a margin:0 auto item is fit-content wide unless width is set, and the >=1700px growth rule + all fit margins assume main = min(var(--content-max),98vw)');
 has(styleBlock, 'margin-top:auto', 'the footer is pushed to the bottom on tall/short pages (margin-top:auto)');
 {
   const bodyIdx = html.indexOf('<body');
@@ -355,7 +356,7 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
   has(ftR, '>Privacy Statement<', '.ft-r anchor reads "Privacy Statement"');
 
   const FOOTER_CSS_RULES = [
-    '.pagefoot{max-width:min(var(--content-max),98vw);margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;}',
+    '.pagefoot{max-width:min(var(--content-max),98vw);width:100%;margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;}',
     '.pagefoot .ft-l{flex:1 1 200px;display:flex;align-items:center;}',
     '.pagefoot .ft-c{flex:0 0 auto;text-align:center;}',
     '.pagefoot .ft-r{flex:1 1 200px;text-align:right;}',
@@ -368,6 +369,7 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
   ];
   for (const rule of FOOTER_CSS_RULES) has(styleBlock, rule, 'footer CSS rule present verbatim: ' + rule.slice(0, 44) + (rule.length > 44 ? '...' : ''));
   not(html, 'ft-text', '.ft-text is gone from both markup and CSS');
+  has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw);width:100%', '.pagefoot carries width:100% -- in a column-flex body (round 8) a margin:0 auto item is fit-content wide unless width is set, which was shrink-wrapping the footer\'s three zones into a jumbled center block');
 
   const LIVEWRAP_PREFIX = '<div class="livewrap"><span class="liveupd">Data from SGE accounting and gpustats · updated quarterly · ';
   const livewrapCount = html.split(LIVEWRAP_PREFIX).length - 1;

@@ -4,6 +4,18 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Public page: footer/main width under the sticky-footer body** (2026-08-31,
+  `build_cluster_page.R`, `scripts/test_page.mjs`): since round 8's
+  `body{display:flex;flex-direction:column}`, a column-flex item with
+  `margin:0 auto` does not stretch (Flexbox §9.4 step 11) -- it shrink-wraps
+  to fit-content instead, which left `main` and `.pagefoot` narrower than the
+  intended `min(var(--content-max),98vw)` (the footer's three zones bunched
+  into a jumbled center block instead of left/center/right, and every fit
+  arithmetic in this changelog implicitly assumed the wider width). Both now
+  carry an explicit `width:100%` alongside their `max-width`. Fixture-tested
+  (RED against the pre-fix page, GREEN after rebuild, 139/139 total
+  assertions); `validate.mjs` and `scripts/test_deploy.sh` (12/12) unaffected.
+
 - **Public page: footer mirrors the portal footers; data stamp moves to a
   status line** (2026-08-31, `build_cluster_page.R`, `scripts/test_page.mjs`):
   the footer is now the same three-zone layout as `gpu-cds-scc`/`cpu-cds-scc`
