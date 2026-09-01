@@ -11,7 +11,10 @@
 // (window_key vocab, monotone P3<=P6<=ALL and every M:<=ALL per pool/metric);
 // `capacity_monthly` [month,pool,cap_h] (month whitelisted per pool, cap_h>0);
 // `capacity.*.added_12m` (non-negative integer <= that pool's total units);
-// meta.contract===3. The gate now also reads output/portal_data.json under
+// meta.contract===3. Contract v4 (2026-09-01) adds `weekly` [monday,pool,held_h]:
+// Monday dates only, dense and bounded per pool by that pool's published months,
+// Σ within 5 % of the monthly Σheld_h; meta.contract===4.
+// The gate now also reads output/portal_data.json under
 // both fixture clone dirs (the internal de-identified emits) for its leak
 // check, so this file writes small internal-emit fixtures with distinctive
 // user codes / project names to test that check.
@@ -87,7 +90,7 @@ writeFileSync(join(emptyGpuDir, 'output', 'portal_data.json'), JSON.stringify({ 
 const goodData = {
   meta: { updated: '2026-08-31', public: true,
           months_cpu: ['2026-06', '2026-07'], months_gpu: ['2026-06', '2026-07'],
-          window3: ['2026-06', '2026-07'], contract: 3 },
+          window3: ['2026-06', '2026-07'], contract: 4 },
   capacity: {
     cpu: { nodes: 2, cores: 52, ram_gb: 1258,
            types: [['Gold-6326', 'PowerEdge R650', 1, 32, 1007], ['E5-2660v3', 'PowerEdge C6320', 1, 20, 251]],
@@ -118,6 +121,12 @@ const goodData = {
   capacity_monthly: [
     ['2026-06', 'cpu', 38000], ['2026-07', 'cpu', 39000],
     ['2026-06', 'gpu', 1400],  ['2026-07', 'gpu', 1450],
+  ],
+  // weekly: [monday, pool, held_h] -- months 2026-06..07 -> Mondays 06-01 .. 07-20 (8 weeks; 2026-06-01 is a Monday,
+  // the last Sunday inside July is 07-26). Σ per pool equals the monthly Σheld_h exactly (cpu 320, gpu 410).
+  weekly: [
+    ...['2026-06-01', '2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06', '2026-07-13', '2026-07-20'].map((d) => [d, 'cpu', 40]),
+    ...['2026-06-01', '2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06', '2026-07-13', '2026-07-20'].map((d) => [d, 'gpu', 51.25]),
   ],
 };
 
@@ -253,8 +262,8 @@ bad = clone(goodData); bad.capacity.gpu.added_12m = -1;
 assert(run(bad) === 1, 'capacity.gpu.added_12m negative fails'); pass('capacity.gpu.added_12m negative fails');
 
 // ---- contract v3: meta.contract ----
-bad = clone(goodData); bad.meta.contract = 2;
-assert(run(bad) === 1, 'meta.contract != 3 fails'); pass('meta.contract must be 3');
+bad = clone(goodData); bad.meta.contract = 3;
+assert(run(bad) === 1, 'meta.contract != 4 fails'); pass('meta.contract must be 4');
 
 // ---- contract v3: leak check reads both internal emits' user codes/project names --
 // (not the generic u-\d+/scc-.* patterns above -- these target the NEW,
@@ -338,6 +347,46 @@ bad = clone(goodData); bad.capacity.cpu.types[0][0] = 'fixture-proj-a';   // lea
   assert(r.status === 1 && r.stderr.includes('leak-check blocklist empty'), 'CPU internal emit alone with F: [] fails closed');
   pass('CPU internal emit alone with F: [] fails closed');
 }
+
+// ---- contract v4: weekly [monday, pool, held_h] ----
+bad = clone(goodData); bad.weekly[0][0] = '2026-06-02';   // a Tuesday
+{ const r = runWith(bad); assert(r.status === 1 && /not a Monday/.test(r.stderr), 'weekly: non-Monday date fails'); pass('weekly: a non-Monday date fails, naming the check'); }
+
+bad = clone(goodData); bad.weekly[0][0] = '2026-6-1';
+assert(run(bad) === 1, 'weekly: bad date shape fails'); pass('weekly: a date not shaped YYYY-MM-DD fails');
+
+bad = clone(goodData); bad.weekly[0][1] = 'tpu';
+assert(run(bad) === 1, 'weekly: unknown pool fails'); pass('weekly: unknown pool fails');
+
+bad = clone(goodData); bad.weekly[0][2] = -1;
+assert(run(bad) === 1, 'weekly: negative held_h fails'); pass('weekly: negative held_h fails');
+
+bad = clone(goodData); bad.weekly[0][2] = 'lots';
+assert(run(bad) === 1, 'weekly: non-numeric held_h fails'); pass('weekly: non-numeric held_h fails');
+
+bad = clone(goodData); bad.weekly = bad.weekly.filter((r) => !(r[0] === '2026-06-15' && r[1] === 'cpu'));
+{ const r = runWith(bad); assert(r.status === 1 && /expected exactly 1 row for week 2026-06-15 \/ pool cpu, found 0/.test(r.stderr), 'weekly: a missing week fails'); pass('weekly: a missing week fails via density, naming the week'); }
+
+bad = clone(goodData); bad.weekly.push(['2026-06-15', 'cpu', 40]);
+{ const r = runWith(bad); assert(r.status === 1 && /found 2/.test(r.stderr), 'weekly: a duplicate week fails'); pass('weekly: a duplicate (week, pool) row fails'); }
+
+bad = clone(goodData); bad.weekly.push(['2026-05-25', 'cpu', 0]);   // a Monday, but its Sunday precedes 2026-06-01
+{ const r = runWith(bad); assert(r.status === 1 && /outside that pool's published months/.test(r.stderr), 'weekly: a week outside the bounds fails'); pass('weekly: a week before the first published month fails'); }
+
+bad = clone(goodData); bad.weekly.push(['2026-07-27', 'gpu', 0]);   // its Sunday (08-02) falls after 2026-07-31
+assert(run(bad) === 1, 'weekly: a week whose Sunday is past the last published month fails'); pass('weekly: a week running past the last published month fails');
+
+bad = clone(goodData); bad.weekly = bad.weekly.map((r) => (r[1] === 'cpu' ? [r[0], r[1], 1] : r));   // Σ 8 vs monthly 320
+{ const r = runWith(bad); assert(r.status === 1 && /more than 5% off/.test(r.stderr), 'weekly: Σheld_h far from the monthly Σ fails'); pass('weekly: a pool whose weekly Σheld_h is >5% off its monthly Σheld_h fails'); }
+
+bad = clone(goodData); bad.weekly = bad.weekly.map((r) => (r[1] === 'cpu' ? [r[0], r[1], 41] : r));   // Σ 328 = +2.5%
+assert(run(bad) === 0, 'weekly: Σ within 5% passes'); pass('weekly: a Σheld_h within 5% of the monthly Σheld_h passes (dropped edge days are tolerated)');
+
+bad = clone(goodData); bad.weekly = [];
+assert(run(bad) === 1, 'empty weekly table fails'); pass('empty weekly table fails (every expected week missing)');
+
+bad = clone(goodData); delete bad.weekly;
+assert(run(bad) === 1, 'missing weekly key fails'); pass('missing top-level weekly key fails');
 
 // ---- contract v3: completeness (every window key/pool or month/pool pair
 // present exactly once) -- distinct from the vocab/monotone checks above,

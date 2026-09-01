@@ -30,6 +30,12 @@
 # (nominal units installed in the 12 months ending on the run date, not
 # retired); meta.contract = 3.
 #
+# Contract v4 (R6, 2026-09-01): the GPU public emit is no longer read -- the GPU
+# internal de-identified emit supplies gpu_monthly too; a pool's published months
+# also exclude any month starting before its emit's meta$start (partial first
+# month); new dense `weekly` rows [monday "YYYY-MM-DD", pool, held_h] over complete
+# ISO weeks inside the published months; meta.contract = 4.
+#
 # Run: module load R/4.5.2 && Rscript scripts/test_cluster_data.R
 # =====================================================================
 suppressPackageStartupMessages({
@@ -74,11 +80,8 @@ days_in_month <- function(m) as.integer(format(month_end(m), "%d"))
 CPU_FCOLS <- c("pt","p","proj","user","node_class","queue","held","utilized","runtime_h",
                "fail_h","wkill_h","njobs","peakmem_gb","fitn","m1024n","nwait",
                "w0","w1","w2","w3","w4","d0","d1","d2","d3","d4","wa_n","wa_used_h","wa_req_h")
-# Copied verbatim from the real $PUB_GPU_CLONE/output/public_data.json "Fcols" (2026-08-31).
-GPU_FCOLS <- c("pt","p","card","held","real","residle_h","vram_h","full_h","kwh",
-               "fail_h","wkill_h","njobs","peakvram","peak_gb","nwait","w0","w1","w2","w3","w4")
 # Copied verbatim from the real $PUB_GPU_CLONE/output/portal_data.json "Fcols" (2026-09-01,
-# the NEW GPU internal de-identified emit contract v3 reads for community membership).
+# the GPU internal de-identified emit contract v4 reads for hours, energy, VRAM AND community membership).
 GPU_INTERNAL_FCOLS <- c("pt","p","proj","user","card","queue","held","real","residle_h","vram_h",
                          "full_h","kwh","fail_h","wkill_h","njobs","peakvram","peak_gb","nwait",
                          "w0","w1","w2","w3","w4")
@@ -86,24 +89,14 @@ GPU_INTERNAL_FCOLS <- c("pt","p","proj","user","card","queue","held","real","res
 # cols defaults to the full real column list; pass a subset (e.g. setdiff(GPU_FCOLS, "kwh"))
 # to build a fixture missing a required field, for the fail-closed test below.
 build_cpu_json <- function(rows, months = months3, meta_over = list(), cols = CPU_FCOLS) {
-  meta <- modifyList(list(generated_epoch = as.numeric(Sys.time()), deid = TRUE, identified = FALSE), meta_over)
+  meta <- modifyList(list(generated_epoch = as.numeric(Sys.time()), deid = TRUE, identified = FALSE,
+                          start = paste0(months[1], "-01")), meta_over)   # R6.2: the emit's first day; default = a complete first month
   n <- nrow(rows)
   F <- matrix("0", nrow = n, ncol = length(cols)); colnames(F) <- cols
   if ("pt" %in% cols)    F[, "pt"]    <- "M"
   if ("proj" %in% cols)  F[, "proj"]  <- "proj1"
   if ("user" %in% cols)  F[, "user"]  <- "u-0000"
   if ("queue" %in% cols) F[, "queue"] <- "owner"
-  for (col in names(rows)) if (col %in% cols) F[, col] <- as.character(rows[[col]])
-  list(meta = meta, periods = list(M = I(months), W = character(0), D = character(0)),
-       Fcols = cols, F = unname(F))
-}
-
-build_gpu_json <- function(rows, months = months3, meta_over = list(), cols = GPU_FCOLS) {
-  meta <- modifyList(list(generated_epoch = as.numeric(Sys.time()), public = TRUE,
-                           identified = FALSE, deid = TRUE), meta_over)
-  n <- nrow(rows)
-  F <- matrix("0", nrow = n, ncol = length(cols)); colnames(F) <- cols
-  if ("pt" %in% cols) F[, "pt"] <- "M"
   for (col in names(rows)) if (col %in% cols) F[, col] <- as.character(rows[[col]])
   list(meta = meta, periods = list(M = I(months), W = character(0), D = character(0)),
        Fcols = cols, F = unname(F))
@@ -154,18 +147,15 @@ gpu_inv <- data.frame(
 )
 
 # ---- build one fixture root + run 50_cluster_data.R against it --------
-# gpu2_* params build the NEW GPU internal de-identified emit (contract v3):
-# same F/Fcols idiom as the CPU internal emit (build_cpu_json is generic
-# enough to reuse verbatim -- it only special-cases pt/proj/user/queue
-# defaults, all of which GPU_INTERNAL_FCOLS also carries).
-make_fixture <- function(cpu_meta_over = list(), gpu_meta_over = list(), gpu2_meta_over = list(),
-                          cpu_cols = CPU_FCOLS, gpu_cols = GPU_FCOLS, gpu2_cols = GPU_INTERNAL_FCOLS,
-                          cpu_rows_in = cpu_rows, gpu_rows_in = gpu_rows, gpu2_rows_in = gpu_rows,
-                          cpu_months = months3, gpu_months = months3, gpu2_months = months3,
+make_fixture <- function(cpu_meta_over = list(), gpu2_meta_over = list(),
+                          cpu_cols = CPU_FCOLS, gpu2_cols = GPU_INTERNAL_FCOLS,
+                          cpu_rows_in = cpu_rows, gpu2_rows_in = gpu_rows,
+                          cpu_months = months3, gpu2_months = months3,
                           cpu_inv_in = cpu_inv, gpu_inv_in = gpu_inv) {
   fx <- tempfile("cluster_data_fixture_")
   dir.create(file.path(fx, "scripts"), recursive = TRUE)
   file.copy(SCRIPT, file.path(fx, "scripts", "50_cluster_data.R"))
+  file.copy(file.path(TEST_DIR, "week_helpers.R"), file.path(fx, "scripts", "week_helpers.R"))   # sourced by the script relative to itself
   cpu_dir <- file.path(fx, "cpu-clone"); gpu_dir <- file.path(fx, "gpu-clone")
   dir.create(file.path(cpu_dir, "output"), recursive = TRUE)
   dir.create(file.path(cpu_dir, "config"), recursive = TRUE)
@@ -173,8 +163,9 @@ make_fixture <- function(cpu_meta_over = list(), gpu_meta_over = list(), gpu2_me
   dir.create(file.path(gpu_dir, "config"), recursive = TRUE)
   writeLines(toJSON(build_cpu_json(cpu_rows_in, months = cpu_months, meta_over = cpu_meta_over, cols = cpu_cols), auto_unbox = TRUE),
              file.path(cpu_dir, "output", "portal_data.json"))
-  writeLines(toJSON(build_gpu_json(gpu_rows_in, months = gpu_months, meta_over = gpu_meta_over, cols = gpu_cols), auto_unbox = TRUE),
-             file.path(gpu_dir, "output", "public_data.json"))
+  # contract v4: the GPU internal de-identified emit is the ONLY GPU input (no public_data.json is written --
+  # the build must not need one). build_cpu_json is generic enough to reuse: it only special-cases
+  # pt/proj/user/queue defaults, all of which GPU_INTERNAL_FCOLS also carries.
   writeLines(toJSON(build_cpu_json(gpu2_rows_in, months = gpu2_months, meta_over = gpu2_meta_over, cols = gpu2_cols), auto_unbox = TRUE),
              file.path(gpu_dir, "output", "portal_data.json"))
   write.csv(cpu_inv_in, file.path(cpu_dir, "config", "cds_cpu_inventory.csv"), row.names = FALSE, quote = FALSE)
@@ -207,6 +198,9 @@ f1 <- make_fixture()
 r1 <- run_script(f1)
 stopifnot("happy-path run must exit 0" = r1$status == 0)
 pass("happy-path run exits 0")
+stopifnot("the build must not need a GPU public emit (contract v4 reads GPU hours from the internal emit)" =
+            !file.exists(file.path(f1$gpu_dir, "output", "public_data.json")))
+pass("build succeeds with no GPU public_data.json present")
 
 outf <- file.path(f1$fx, "output", "cluster_data.json")
 stopifnot("output/cluster_data.json must be written" = file.exists(outf))
@@ -311,8 +305,8 @@ stopifnot("headline$jobs must be cpu+gpu njobs over window3" = as.numeric(out$he
 pass("headline sums cpu+gpu held/njobs over window3")
 
 # ---- contract v3 (happy path): meta.contract, community, capacity_monthly, added_12m ----
-stopifnot("meta.contract must be 3" = !is.null(out$meta$contract) && as.numeric(out$meta$contract) == 3)
-pass("meta.contract == 3")
+stopifnot("meta.contract must be 4" = as.numeric(out$meta$contract) == 4)
+pass("meta.contract == 4")
 
 stopifnot("community rows must have 4 elements (contract v3)" = length(raw$community[[1]]) == 4)
 stopifnot("community rows must be [char,char,2x num], not all-string" = row_types_ok(raw$community[[1]], 2))
@@ -364,27 +358,13 @@ stopifnot("CPU input 3 days old must make the script stop() (48h freshness limit
 pass("stale (3-day-old) CPU input is refused (48h limit)")
 
 # =====================================================================
-# 4) GPU freshness ceiling widened to 100 days (quarterly cadence): a
-#    40-day-old GPU input still passes; a 101-day-old one is refused.
-# =====================================================================
-f4a <- make_fixture(gpu_meta_over = list(generated_epoch = as.numeric(Sys.time()) - 40 * 86400))
-r4a <- run_script(f4a)
-stopifnot("GPU input 40 days old must still succeed (100d freshness limit)" = r4a$status == 0)
-pass("40-day-old GPU input still succeeds (100d limit)")
-
-f4b <- make_fixture(gpu_meta_over = list(generated_epoch = as.numeric(Sys.time()) - 101 * 86400))
-r4b <- run_script(f4b)
-stopifnot("GPU input 101 days old must make the script stop() (100d freshness limit)" = r4b$status != 0)
-pass("stale (101-day-old) GPU input is refused (100d limit)")
-
-# =====================================================================
 # 5) Fail closed: a GPU fixture missing a required v2 column (kwh) must
 #    stop() the build rather than silently emit zeros/garbage.
 # =====================================================================
-f5 <- make_fixture(gpu_cols = setdiff(GPU_FCOLS, "kwh"))
+f5 <- make_fixture(gpu2_cols = setdiff(GPU_INTERNAL_FCOLS, "kwh"))
 r5 <- run_script(f5)
 stopifnot("GPU input missing required column kwh must make the script stop() (nonzero exit)" = r5$status != 0)
-pass("GPU input missing a required v2 column (kwh) is refused (fail closed)")
+pass("GPU internal emit missing a required column (kwh) is refused (fail closed)")
 
 # =====================================================================
 # 6) window3 must end at the calendar month just closed, not merely
@@ -399,7 +379,7 @@ gpu_lag_rows <- data.frame(
   vram_h = c(280, 180), fail_h = c(5, 3), wkill_h = c(2, 1), njobs = c(20, 10),
   stringsAsFactors = FALSE
 )
-f6 <- make_fixture(gpu_rows_in = gpu_lag_rows, gpu_months = c(prev2, cur))
+f6 <- make_fixture(gpu2_rows_in = gpu_lag_rows, gpu2_months = c(prev2, cur))
 r6 <- run_script(f6)
 stopifnot("GPU input whose newest common month is 2 months back must stop() (window3 lag guard)" =
             r6$status != 0 && grepl("window3 lag", r6$output))
@@ -417,8 +397,9 @@ pass("window3 ending at the month just closed (1 month back) passes the lag guar
 #
 #    7 complete months (prev7..prev1; cur dropped), with UNEQUAL per-pool
 #    coverage: CPU's own published month list is all 7; GPU's own
-#    published month list (months_gpu, from the PUBLIC gpu emit) is only
-#    the newest 5 (prev5..prev1) -- but the GPU INTERNAL de-identified
+#    published month list (months_gpu) is only the newest 5 (prev5..prev1)
+#    because the GPU emit's meta.start falls inside prev6, which makes
+#    prev6 a partial first month (R6.2) -- but the GPU INTERNAL de-identified
 #    emit (community's actual data source) is given rows for the full 7
 #    months anyway, exactly like the real GPU pool (a daily-ish internal
 #    emit with more history than its own quarterly public monthly table).
@@ -447,19 +428,14 @@ community_cpu_rows <- mk_rows(months7, data.frame(
 community_cpu_rows$user <- paste0("cpu-", community_cpu_rows$user)
 community_cpu_rows$proj <- paste0("cpu-", community_cpu_rows$proj)
 
-gpu_pub_rows7 <- data.frame(
-  p = rep(months5_gpu, each = 2), card = c("H200", "L40S"),
-  held = 100, real = 80, residle_h = 5, kwh = 50, vram_h = 40, fail_h = 1, wkill_h = 0, njobs = 2,
-  stringsAsFactors = FALSE
-)
 community_gpu2_rows <- mk_rows(months7, data.frame(card = "H200", held = 1, real = 1, residle_h = 0,
                                                     kwh = 1, vram_h = 1, fail_h = 0, wkill_h = 0, njobs = 1))
 community_gpu2_rows$user <- paste0("gpu-", community_gpu2_rows$user)
 community_gpu2_rows$proj <- paste0("gpu-", community_gpu2_rows$proj)
 
 f7 <- make_fixture(cpu_rows_in = community_cpu_rows, cpu_months = c(months7, cur),
-                    gpu_rows_in = gpu_pub_rows7, gpu_months = c(months5_gpu, cur),
-                    gpu2_rows_in = community_gpu2_rows, gpu2_months = c(months7, cur))
+                    gpu2_rows_in = community_gpu2_rows, gpu2_months = c(months7, cur),
+                    gpu2_meta_over = list(start = format(month_start(prev6) + 5, "%Y-%m-%d")))   # prev6 is partial -> GPU's published months are prev5..prev1
 r7 <- run_script(f7)
 stopifnot("community fixture run must exit 0" = r7$status == 0)
 out7 <- fromJSON(file.path(f7$fx, "output", "cluster_data.json"), simplifyVector = TRUE, simplifyMatrix = TRUE)
@@ -607,5 +583,114 @@ f10d <- make_fixture(gpu2_meta_over = list(generated_epoch = as.numeric(Sys.time
 r10d <- run_script(f10d)
 stopifnot("GPU internal emit 40h old must still succeed (48h freshness limit)" = r10d$status == 0)
 pass("40-hour-old GPU internal emit still succeeds (48h limit)")
+
+# =====================================================================
+# 11) R6.2: a month whose first day precedes the emit's meta$start is a
+#     partial first month and never publishes -- for either pool. A
+#     missing meta$start fails closed.
+# =====================================================================
+f11 <- make_fixture(gpu2_meta_over = list(start = format(month_start(prev2) + 3, "%Y-%m-%d")))
+r11 <- run_script(f11)
+stopifnot("partial-first-month fixture must exit 0" = r11$status == 0)
+out11 <- fromJSON(file.path(f11$fx, "output", "cluster_data.json"), simplifyVector = TRUE, simplifyMatrix = TRUE)
+stopifnot("GPU months must drop prev2 (emit starts on its 4th day)" = identical(as.character(out11$meta$months_gpu), prev1))
+stopifnot("gpu_monthly must carry only prev1 rows" = all(out11$gpu_monthly[, 1] == prev1) && nrow(out11$gpu_monthly) == 2)
+stopifnot("CPU months are unaffected" = setequal(out11$meta$months_cpu, c(prev2, prev1)))
+stopifnot("window3 shrinks to the common month" = identical(as.character(out11$meta$window3), prev1))
+r11c <- out11$community
+stopifnot("community M:prev2 for gpu must be 0/0 (outside GPU's published months)" =
+            as.numeric(r11c[r11c[, 1] == paste0("M:", prev2) & r11c[, 2] == "gpu", 3]) == 0)
+pass("a GPU month starting before the emit's meta$start is dropped as partial; window3/community follow")
+
+f11b <- make_fixture(cpu_meta_over = list(start = format(month_start(prev2) + 3, "%Y-%m-%d")))
+r11b <- run_script(f11b)
+out11b <- fromJSON(file.path(f11b$fx, "output", "cluster_data.json"), simplifyVector = TRUE, simplifyMatrix = TRUE)
+stopifnot("CPU months must drop prev2 too when the CPU emit starts mid-month" =
+            r11b$status == 0 && identical(as.character(out11b$meta$months_cpu), prev1))
+pass("the same partial-first-month rule applies to the CPU emit")
+
+f11c <- make_fixture(cpu_meta_over = list(start = NULL))   # modifyList(NULL) removes the key
+r11c_run <- run_script(f11c)
+stopifnot("an emit without meta$start must make the script stop()" = r11c_run$status != 0 && grepl("meta\\$start", r11c_run$output))
+pass("an emit lacking meta$start is refused (cannot decide which months are complete)")
+
+# =====================================================================
+# 12) R6.3 weekly: [monday, pool, held_h] -- complete ISO weeks inside the
+#     pool's published months, dense (0 for weeks with no rows), ISO
+#     "YYYY-Www" keys decoded to Monday dates, W rows outside the bounds
+#     (a partial first week, the in-progress week) ignored. 14 published
+#     months so the record always crosses a year boundary (ISO week 1 /
+#     week 52-53 arithmetic is exercised on every run date). Expected
+#     Mondays are computed here by iterating days -- an independent
+#     implementation of the bounds rule.
+# =====================================================================
+wh <- new.env(); sys.source(file.path(TEST_DIR, "week_helpers.R"), envir = wh)   # the script's own helpers, isolated from this file's
+stopifnot("2025-W01 starts Mon 2024-12-30" = wh$iso_monday("2025-W01") == as.Date("2024-12-30"))
+stopifnot("2026-W01 starts Mon 2025-12-29" = wh$iso_monday("2026-W01") == as.Date("2025-12-29"))
+stopifnot("2020-W53 starts Mon 2020-12-28 (a 53-week ISO year)" = wh$iso_monday("2020-W53") == as.Date("2020-12-28"))
+stopifnot("2025-W48 starts Mon 2025-11-24" = wh$iso_monday("2025-W48") == as.Date("2025-11-24"))
+stopifnot("vectorised" = identical(wh$iso_monday(c("2025-W01", "2025-W02")), as.Date(c("2024-12-30", "2025-01-06"))))
+stopifnot("bounds: Jun-Jul 2026 -> Mondays 06-01 .. 07-20" = identical(wh$week_mondays(c("2026-06", "2026-07")), seq(as.Date("2026-06-01"), as.Date("2026-07-20"), by = "7 days")))
+stopifnot("bounds: a record shorter than a week has no complete week" = length(wh$week_mondays(character(0))) == 0)
+pass("week helpers: ISO keys decode to the right Mondays across year boundaries and a 53-week year; the bounds rule matches the gate fixture")
+
+months14 <- format(seq(cur_d, by = "-1 month", length.out = 15)[15:2], "%Y-%m")   # oldest -> newest, cur excluded
+expected_mondays <- function(months) {
+  d <- seq(month_start(months[1]), month_end(months[length(months)]), by = "1 day")
+  mons <- d[format(d, "%u") == "1"]
+  mons[mons + 6 <= month_end(months[length(months)])]
+}
+iso_key <- function(d) format(as.Date(d), "%G-W%V")   # strftime's own ISO year/week -- independent of the script's arithmetic
+exp_cpu_mondays <- expected_mondays(months14)
+stopifnot(length(exp_cpu_mondays) > 50)   # ~60 weeks in 14 months
+mid_i <- 20L
+cpu_m_rows <- data.frame(pt = "M", p = months14, node_class = "standard", held = 10, utilized = 5, fail_h = 0,
+                         wkill_h = 0, njobs = 1, wa_used_h = 5, wa_req_h = 6, stringsAsFactors = FALSE)
+cpu_w_rows <- data.frame(
+  pt = "W",
+  p  = iso_key(c(exp_cpu_mondays[1], exp_cpu_mondays[1], exp_cpu_mondays[mid_i], exp_cpu_mondays[length(exp_cpu_mondays)],
+                 exp_cpu_mondays[1] - 7, exp_cpu_mondays[length(exp_cpu_mondays)] + 7)),
+  node_class = c("m1024", "standard", "standard", "standard", "standard", "standard"),
+  held = c(3, 4, 11, 5, 999, 888),   # first week split across two classes (3+4=7); 999/888 lie outside the bounds
+  utilized = 0, fail_h = 0, wkill_h = 0, njobs = 1, wa_used_h = 0, wa_req_h = 0, stringsAsFactors = FALSE)
+wk_cpu_rows <- rbind(cpu_m_rows, cpu_w_rows)
+# GPU: same 14-month emit but meta$start inside months14[6], so its published months are months14[7..14]
+gpu_start <- format(month_start(months14[6]) + 2, "%Y-%m-%d")
+months_gpu_pub <- months14[7:14]
+exp_gpu_mondays <- expected_mondays(months_gpu_pub)
+gpu_m_rows <- data.frame(pt = "M", p = months14, card = "H200", held = 100, real = 80, residle_h = 5, kwh = 50,
+                         vram_h = 40, fail_h = 1, wkill_h = 0, njobs = 2, stringsAsFactors = FALSE)
+gpu_w_rows <- data.frame(pt = "W", p = iso_key(c(exp_gpu_mondays[1], exp_gpu_mondays[3], exp_gpu_mondays[1] - 7)),
+                         card = "H200", held = c(21, 22, 777), real = 0, residle_h = 0, kwh = 0, vram_h = 0,
+                         fail_h = 0, wkill_h = 0, njobs = 1, stringsAsFactors = FALSE)
+wk_gpu_rows <- rbind(gpu_m_rows, gpu_w_rows)
+f12 <- make_fixture(cpu_rows_in = wk_cpu_rows, cpu_months = c(months14, cur),
+                    gpu2_rows_in = wk_gpu_rows, gpu2_months = c(months14, cur),
+                    gpu2_meta_over = list(start = gpu_start))
+r12 <- run_script(f12)
+stopifnot("weekly fixture run must exit 0" = r12$status == 0)
+out12 <- fromJSON(file.path(f12$fx, "output", "cluster_data.json"), simplifyVector = TRUE, simplifyMatrix = TRUE)
+raw12 <- fromJSON(file.path(f12$fx, "output", "cluster_data.json"), simplifyVector = FALSE)
+stopifnot("weekly rows must have 3 elements" = length(raw12$weekly[[1]]) == 3)
+stopifnot("weekly rows must be [char,char,num], not all-string" = row_types_ok(raw12$weekly[[1]], 2))
+wk12 <- out12$weekly
+wk_cpu <- wk12[wk12[, 2] == "cpu", , drop = FALSE]; wk_gpu <- wk12[wk12[, 2] == "gpu", , drop = FALSE]
+stopifnot("cpu weekly Mondays must equal the expected dense list, in order" =
+            identical(wk_cpu[, 1], format(exp_cpu_mondays, "%Y-%m-%d")))
+stopifnot("gpu weekly Mondays must equal ITS OWN (shorter) expected list" =
+            identical(wk_gpu[, 1], format(exp_gpu_mondays, "%Y-%m-%d")))
+held_cpu <- as.numeric(wk_cpu[, 3]); held_gpu <- as.numeric(wk_gpu[, 3])
+stopifnot("first cpu week sums both classes (3+4)" = held_cpu[1] == 7)
+stopifnot("mid cpu week carries its row" = held_cpu[mid_i] == 11)
+stopifnot("last cpu week carries its row" = held_cpu[length(held_cpu)] == 5)
+stopifnot("every other cpu week is a dense 0" = sum(held_cpu) == 7 + 11 + 5)
+stopifnot("out-of-bounds cpu W rows (999 before the first complete week, 888 in the in-progress week) never surface" =
+            !any(held_cpu %in% c(999, 888)) && !grepl("999|888", paste(wk_cpu[, 3], collapse = " ")))
+stopifnot("gpu weekly sums land on the right Mondays" = held_gpu[1] == 21 && held_gpu[3] == 22 && sum(held_gpu) == 43)
+stopifnot("weekly names carry no forbidden key" = !any(c("proj", "user", "host", "code", "codename") %in% names(out12)))
+pass("weekly: dense complete-week rows per pool, ISO keys decoded to Mondays across a year boundary, out-of-bounds weeks ignored, per-pool bounds")
+
+stopifnot("meta.contract must be 4" = as.numeric(out12$meta$contract) == 4)
+pass("meta.contract == 4")
 
 cat("\nALL TESTS PASSED\n")

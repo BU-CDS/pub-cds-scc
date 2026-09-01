@@ -4,6 +4,25 @@ All notable changes to the public cluster page.
 
 ## Unreleased
 
+- **Data layer + gate: GPU history from the GPU pool's own internal data, a
+  complete-month rule for both pools, and a weekly table (contract v4)**
+  (2026-09-01, `scripts/50_cluster_data.R`, `scripts/test_cluster_data.R`,
+  `scripts/gate_cluster.mjs`, `scripts/test_gate.mjs`, `scripts/week_helpers.R`): the page no longer
+  reads the GPU pool's separately published six-month extract; its hours,
+  energy and VRAM series now come from the same de-identified internal data
+  already read for researcher counts, aggregated by month and GPU type
+  exactly as before, so the GPU record runs from April 2025 (the first
+  complete month of GPU data) instead of the trailing six months. A month
+  that began before a pool's data collection started never publishes, for
+  either pool. New `weekly` rows -- reserved hours per complete ISO week,
+  keyed by the week's Monday, one row per week inside the published months
+  with zero where nothing ran -- feed the coming over-time charts. The gate
+  checks every week is a Monday, that each pool's weeks are exactly the
+  complete weeks inside its own published months (none missing, none extra,
+  no duplicates), and that the weekly total sits within 5% of the monthly
+  total. Fixture-tested end to end; the data layer builds with no GPU
+  extract present.
+
 - **Page: researchers, groups and capacity-reserved tiles; 12-month
   additions in the panel headers** (2026-09-01, `build_cluster_page.R`,
   `scripts/test_page.mjs`): every Totals card now leads with three new

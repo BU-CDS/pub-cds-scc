@@ -3,8 +3,7 @@
 # the one public fact table this page's charts read.
 #
 # Reads (read-only, env-overridable):
-#   $PUB_CPU_CLONE/output/portal_data.json        (raw CPU strip+aggregate emit)
-#   $PUB_GPU_CLONE/output/public_data.json        (already-public GPU emit)
+#   $PUB_CPU_CLONE/output/portal_data.json        (CPU internal de-identified emit)
 #   $PUB_GPU_CLONE/output/portal_data.json        (GPU internal de-identified emit)
 #   $PUB_CPU_CLONE/config/cds_cpu_inventory.csv
 #   $PUB_GPU_CLONE/config/gpu_inventory_history.csv
@@ -27,6 +26,15 @@
 # user codes and project names are computed only to be counted — the
 # codes/names themselves never reach cpu_m/gpu_m/community/capacity_monthly
 # or any other emitted field.
+#
+# Contract v4 (R6, 2026-09-01): the GPU public emit is gone -- the GPU internal
+# de-identified emit (already read for membership) also supplies gpu_monthly,
+# aggregated to (month, card) exactly as the CPU emit is aggregated to
+# (month, node_class). A pool's published months exclude the in-progress
+# month AND any month starting before its emit's meta$start (a partial first
+# month). New `weekly` rows [monday, pool, held_h]: Σ held over the emit's
+# pt=="W" rows per ISO week, keyed by that week's Monday (YYYY-MM-DD), dense
+# over the complete weeks inside the pool's published months.
 # Run: module load R/4.5.2 && Rscript scripts/50_cluster_data.R   (~1 s)
 # =====================================================================
 .f    <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
@@ -38,44 +46,46 @@ suppressPackageStartupMessages({
   library(data.table)
   library(jsonlite)
 })
+source(file.path(ROOT, "scripts", "week_helpers.R"))
 
 PUB_CPU_CLONE <- Sys.getenv("PUB_CPU_CLONE", "/usr3/bustaff/mhorn/repos/cpu-cds-scc")
 PUB_GPU_CLONE <- Sys.getenv("PUB_GPU_CLONE", "/usr3/bustaff/mhorn/repos/gpu-cds-scc")
 
-CPU_MAX_AGE_H  <- 48    # CPU emit refreshes ~daily
-GPU_MAX_AGE_D  <- 100   # GPU public emit refreshes ~quarterly
-GPU2_MAX_AGE_H <- 48    # GPU internal de-identified emit refreshes ~daily, same as CPU
+CPU_MAX_AGE_H <- 48    # CPU internal emit refreshes ~daily
+GPU_MAX_AGE_H <- 48    # GPU internal de-identified emit refreshes ~daily
 
-cpu_inf  <- file.path(PUB_CPU_CLONE, "output", "portal_data.json")
-gpu_inf  <- file.path(PUB_GPU_CLONE, "output", "public_data.json")
-gpu2_inf <- file.path(PUB_GPU_CLONE, "output", "portal_data.json")
-stopifnot(file.exists(cpu_inf), file.exists(gpu_inf), file.exists(gpu2_inf))
+cpu_inf <- file.path(PUB_CPU_CLONE, "output", "portal_data.json")
+gpu_inf <- file.path(PUB_GPU_CLONE, "output", "portal_data.json")
+stopifnot(file.exists(cpu_inf), file.exists(gpu_inf))
 
-cpu  <- fromJSON(cpu_inf, simplifyMatrix = TRUE)
-gpu  <- fromJSON(gpu_inf, simplifyMatrix = TRUE)
-gpu2 <- fromJSON(gpu2_inf, simplifyMatrix = TRUE)
+cpu <- fromJSON(cpu_inf, simplifyMatrix = TRUE)
+gpu <- fromJSON(gpu_inf, simplifyMatrix = TRUE)
 
 if (isTRUE(cpu$meta$identified) || !isTRUE(cpu$meta$deid))
   stop("50_cluster_data: CPU portal_data.json is identified or unmarked; refusing to build cluster_data")
-if (isTRUE(gpu$meta$identified) || !isTRUE(gpu$meta$public))
-  stop("50_cluster_data: GPU public_data.json is identified or not public; refusing to build cluster_data")
-if (isTRUE(gpu2$meta$identified) || !isTRUE(gpu2$meta$deid))
+if (isTRUE(gpu$meta$identified) || !isTRUE(gpu$meta$deid))
   stop("50_cluster_data: GPU portal_data.json (internal emit) is identified or unmarked; refusing to build cluster_data")
 
 now <- as.numeric(Sys.time())
 cpu_age_h <- (now - cpu$meta$generated_epoch) / 3600
 if (cpu_age_h > CPU_MAX_AGE_H)
   stop(sprintf("50_cluster_data: CPU input stale (%.1f h > %d h limit)", cpu_age_h, CPU_MAX_AGE_H))
-gpu_age_d <- (now - gpu$meta$generated_epoch) / 86400
-if (gpu_age_d > GPU_MAX_AGE_D)
-  stop(sprintf("50_cluster_data: GPU input stale (%.1f d > %d d limit)", gpu_age_d, GPU_MAX_AGE_D))
-gpu2_age_h <- (now - gpu2$meta$generated_epoch) / 3600
-if (gpu2_age_h > GPU2_MAX_AGE_H)
-  stop(sprintf("50_cluster_data: GPU portal_data.json (internal emit) stale (%.1f h > %d h limit)", gpu2_age_h, GPU2_MAX_AGE_H))
+gpu_age_h <- (now - gpu$meta$generated_epoch) / 3600
+if (gpu_age_h > GPU_MAX_AGE_H)
+  stop(sprintf("50_cluster_data: GPU portal_data.json (internal emit) stale (%.1f h > %d h limit)", gpu_age_h, GPU_MAX_AGE_H))
 
+# R6.2 complete months: the in-progress month never publishes, nor does a month
+# that started before the emit's own first day (a partial first month would
+# advertise a dip that is really missing data).
 cur <- format(Sys.Date(), "%Y-%m")
-months_cpu <- setdiff(cpu$periods$M, cur)   # complete months only: the in-progress month never publishes
-months_gpu <- setdiff(gpu$periods$M, cur)
+complete_months <- function(periods_m, start, label) {
+  if (is.null(start) || !nzchar(start))
+    stop(sprintf("50_cluster_data: %s has no meta$start; cannot decide which months are complete", label))
+  ms <- setdiff(periods_m, cur)
+  ms[as.Date(paste0(ms, "-01")) >= as.Date(start)]
+}
+months_cpu <- complete_months(cpu$periods$M, cpu$meta$start, "CPU portal_data.json")
+months_gpu <- complete_months(gpu$periods$M, gpu$meta$start, "GPU portal_data.json")
 stopifnot(length(months_cpu) >= 1, length(months_gpu) >= 1)
 window3 <- tail(sort(intersect(months_cpu, months_gpu)), 3)   # trailing (<=3) months common to both, for the headline
 
@@ -107,9 +117,9 @@ require_cols <- function(cols, have, label) {
     stop(sprintf("50_cluster_data: %s missing required column(s): %s", label, paste(missing, collapse = ", ")))
 }
 require_cols(CPU_METRICS, cpu$Fcols, "CPU portal_data.json")
-require_cols(GPU_METRICS, gpu$Fcols, "GPU public_data.json")
+require_cols(GPU_METRICS, gpu$Fcols, "GPU portal_data.json")
 require_cols(c("pt", "p", "user", "proj"), cpu$Fcols, "CPU portal_data.json (community)")
-require_cols(c("pt", "p", "user", "proj"), gpu2$Fcols, "GPU portal_data.json (internal emit, community)")
+require_cols(c("pt", "p", "user", "proj"), gpu$Fcols, "GPU portal_data.json (community)")
 
 tomat  <- function(m, cols) { x <- as.data.table(m); setnames(x, cols); x }
 numify <- function(x, cc) { for (col in cc) x[, (col) := as.numeric(get(col))]; x }
@@ -124,8 +134,8 @@ Fc <- numify(tomat(cpu$F, cpu$Fcols), CPU_METRICS)[pt == "M" & p %chin% months_c
 Fg <- numify(tomat(gpu$F, gpu$Fcols), GPU_METRICS)[pt == "M" & p %chin% months_gpu]
 
 # community membership: (p, user, proj) only, from the CPU internal emit (cpu$F,
-# already read above) and the GPU internal de-identified emit (gpu2$F, read ONLY
-# for this). RULING (2026-09-01): each pool's membership is restricted to that
+# already read above) and the GPU internal de-identified emit (gpu$F). RULING
+# (2026-09-01): each pool's membership is restricted to that
 # SAME pool's own published month list (months_cpu / months_gpu -- the same
 # months its hour table covers), not the wider all_months union -- so every
 # tile on a card covers the same span (the coverage caption already discloses
@@ -133,8 +143,8 @@ Fg <- numify(tomat(gpu$F, gpu$Fcols), GPU_METRICS)[pt == "M" & p %chin% months_g
 # at all (e.g. a CPU-only month, for the GPU pool) naturally yields 0 users /
 # 0 groups once intersected below, not a phantom stray-month count. user/proj
 # are read only to be counted distinct below -- never emitted themselves.
-Fm_cpu <- tomat(cpu$F,  cpu$Fcols )[pt == "M" & p %chin% months_cpu, .(p, user, proj)]
-Fm_gpu <- tomat(gpu2$F, gpu2$Fcols)[pt == "M" & p %chin% months_gpu, .(p, user, proj)]
+Fm_cpu <- tomat(cpu$F, cpu$Fcols)[pt == "M" & p %chin% months_cpu, .(p, user, proj)]
+Fm_gpu <- tomat(gpu$F, gpu$Fcols)[pt == "M" & p %chin% months_gpu, .(p, user, proj)]
 
 # column order fixed to the spec's contract v2 row shape
 cpu_m <- Fc[, .(held_h     = round(sum(held), 2),
@@ -194,8 +204,6 @@ gpu_inv <- fread(file.path(PUB_GPU_CLONE, "config", "gpu_inventory_history.csv")
 cpu_inv_all <- fread(file.path(PUB_CPU_CLONE, "config", "cds_cpu_inventory.csv"), colClasses = "character")[nzchar(host)]
 gpu_inv_all <- fread(file.path(PUB_GPU_CLONE, "config", "gpu_inventory_history.csv"), colClasses = "character")[nzchar(host)]
 
-month_start <- function(m) as.Date(paste0(m, "-01"))
-month_end   <- function(m) seq(month_start(m), by = "1 month", length.out = 2)[2] - 1
 # install_date is the first active day; retired is the day a unit "leaves the
 # queue" (config/*.csv column doc) -- i.e. the first day it is NO LONGER active,
 # so the last active day is retired - 1. Blank install_date/retired default to
@@ -213,6 +221,28 @@ capacity_monthly <- rbind(
   rbindlist(lapply(months_cpu, function(m) data.table(month = m, pool = "cpu", cap_h = round(cap_h_for_month(cpu_inv_all, "ncpu", m), 2)))),
   rbindlist(lapply(months_gpu, function(m) data.table(month = m, pool = "gpu", cap_h = round(cap_h_for_month(gpu_inv_all, "gpus", m), 2))))
 )
+
+# weekly: [monday, pool, held_h] -- contract v4 (R6.3). An ISO week key
+# "YYYY-Www" names the week whose Monday is the Monday on or before 4 January
+# of that ISO year plus 7*(w-1) days. Rows exist only for complete weeks
+# inside the pool's published months (first Monday >= first day of its first
+# month .. last Monday whose Sunday <= last day of its last month), one per
+# Monday, held_h = 0 where the emit has no rows; so "the in-progress month
+# never publishes" stays literally true at week grain too.
+# iso_monday() / week_mondays() come from scripts/week_helpers.R (sourced above).
+weekly_for <- function(emit, cols, months, pool, label) {
+  Fw <- numify(tomat(emit$F, cols), "held")[pt == "W"]
+  if (nrow(Fw) && !all(grepl("^\\d{4}-W\\d{2}$", Fw$p)))
+    stop(sprintf("50_cluster_data: %s has a W-grain period not shaped YYYY-Www", label))
+  Fw[, monday := iso_monday(p)]
+  sums <- Fw[, .(held_h = sum(held)), by = monday]
+  out <- merge(data.table(monday = week_mondays(months), pool = pool), sums, by = "monday", all.x = TRUE, sort = TRUE)
+  out[is.na(held_h), held_h := 0]
+  out[, .(monday = format(monday, "%Y-%m-%d"), pool, held_h = round(held_h, 2))]
+}
+weekly <- rbind(weekly_for(cpu, cpu$Fcols, months_cpu, "cpu", "CPU portal_data.json"),
+                weekly_for(gpu, gpu$Fcols, months_gpu, "gpu", "GPU portal_data.json"))
+stopifnot(!any(c("proj", "user", "host", "code", "codename") %in% names(weekly)))
 
 # added_12m: nominal units (not rows) installed within the 12 months ending on
 # the run date, excluding units that are (now) retired.
@@ -254,20 +284,21 @@ headline <- list(
 
 meta <- list(updated = format(Sys.Date(), "%Y-%m-%d"), public = TRUE,
              months_cpu = I(months_cpu), months_gpu = I(months_gpu), window3 = I(window3),
-             contract = 3L)
+             contract = 4L)
 
 out <- list(meta = meta, capacity = capacity,
             cpu_monthly = to_rows(cpu_m),
             gpu_monthly = to_rows(gpu_m),
             headline = headline,
             community = to_rows(community),
-            capacity_monthly = to_rows(capacity_monthly))
+            capacity_monthly = to_rows(capacity_monthly),
+            weekly = to_rows(weekly))
 
 .outf <- file.path(OUTPUT_DIR, "cluster_data.json")
 writeLines(toJSON(out, auto_unbox = TRUE, digits = NA), paste0(.outf, ".tmp"))
 invisible(file.rename(paste0(.outf, ".tmp"), .outf))   # atomic, same as the siblings' 52/57
-cat(sprintf("wrote cluster_data.json — cpu_monthly %d rows (%s..%s), gpu_monthly %d rows (%s..%s); headline %.1f cpu core-h / %.1f gpu-h / %d jobs; community %d rows; capacity_monthly %d rows; added_12m cpu %d / gpu %d\n",
+cat(sprintf("wrote cluster_data.json — cpu_monthly %d rows (%s..%s), gpu_monthly %d rows (%s..%s); headline %.1f cpu core-h / %.1f gpu-h / %d jobs; community %d rows; capacity_monthly %d rows; added_12m cpu %d / gpu %d; weekly %d rows\n",
             nrow(cpu_m), months_cpu[1], months_cpu[length(months_cpu)],
             nrow(gpu_m), months_gpu[1], months_gpu[length(months_gpu)],
             headline$cpu_core_h, headline$gpu_h, headline$jobs,
-            nrow(community), nrow(capacity_monthly), cpu_added_12m, gpu_added_12m))
+            nrow(community), nrow(capacity_monthly), cpu_added_12m, gpu_added_12m, nrow(weekly)))

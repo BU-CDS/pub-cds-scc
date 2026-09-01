@@ -20,6 +20,11 @@
 // category (user code / project) plus a short local sha1 reference, never the
 // value itself.
 //
+// Contract v4 (R6): `weekly` rows [monday, pool, held_h] — monday a `YYYY-MM-DD`
+// Monday, per pool exactly the dense list of complete weeks inside that pool's
+// published months, held_h ≥ 0, Σ within 5 % of the pool's monthly Σheld_h;
+// meta.contract === 4. The gate never read the GPU public emit and still doesn't.
+//
 // Usage: node gate_cluster.mjs <cluster_data.json> [built_html]
 //   - called before build with just the json (data-layer gate)
 //   - called after build with the html too (page gate)
@@ -113,7 +118,7 @@ try { rawText = readFileSync(dataPath, 'utf8'); data = JSON.parse(rawText); }
 catch (e) { bad(`cannot read/parse ${dataPath}: ${e.message}`); }
 
 if (data) {
-  const TOP = ['meta', 'capacity', 'cpu_monthly', 'gpu_monthly', 'headline', 'community', 'capacity_monthly'];
+  const TOP = ['meta', 'capacity', 'cpu_monthly', 'gpu_monthly', 'headline', 'community', 'capacity_monthly', 'weekly'];
   for (const k of Object.keys(data)) if (!TOP.includes(k)) bad(`unexpected top-level key: ${k}`);
   for (const k of TOP) if (!(k in data)) bad(`missing top-level key: ${k}`);
 
@@ -122,7 +127,7 @@ if (data) {
   for (const k of Object.keys(meta)) if (!META_KEYS.includes(k)) bad(`unexpected meta key: ${k}`);
   if (!DATE.test(meta.updated)) bad(`meta.updated not YYYY-MM-DD: ${meta.updated}`);
   if (meta.public !== true) bad('meta.public is not true');
-  if (Number(meta.contract) !== 3) bad(`meta.contract must be 3: ${meta.contract}`);
+  if (Number(meta.contract) !== 4) bad(`meta.contract must be 4: ${meta.contract}`);
   for (const listKey of ['months_cpu', 'months_gpu', 'window3']) {
     for (const m of meta[listKey] || []) if (!PERIOD.test(m)) bad(`meta.${listKey}: bad period: ${m}`);
   }
@@ -243,6 +248,60 @@ if (data) {
     if (cnt !== 1) bad(`capacity_monthly: expected exactly 1 row for month ${m} / pool gpu, found ${cnt}`);
   }
 
+  // ---- weekly: [monday, pool, held_h] (contract v4, R6.3/R6.4) ----
+  // The expected Monday list per pool is derived from that pool's OWN published
+  // months: first Monday >= first day of its first month .. last Monday whose
+  // Sunday <= last day of its last month, every 7 days. Dense and bounded: each
+  // expected week exactly once, nothing outside. All arithmetic in UTC.
+  const DAY = 86400000;
+  const utcDate = (s) => Date.parse(s + 'T00:00:00Z');
+  const ymd = (t) => new Date(t).toISOString().slice(0, 10);
+  const expectedMondays = (months) => {
+    const ms = [...months].sort();
+    if (!ms.length) return [];
+    const [y0, m0] = ms[0].split('-').map(Number), [y1, m1] = ms[ms.length - 1].split('-').map(Number);
+    let first = Date.UTC(y0, m0 - 1, 1);
+    const last = Date.UTC(y1, m1, 0);                              // day 0 of the following month = last day of m1
+    while (new Date(first).getUTCDay() !== 1) first += DAY;
+    let lastMon = last - 6 * DAY;
+    while (new Date(lastMon).getUTCDay() !== 1) lastMon -= DAY;
+    const out = [];
+    for (let t = first; t <= lastMon; t += 7 * DAY) out.push(ymd(t));
+    return out;
+  };
+  const weeklySeen = new Map();
+  const weeklyHeld = { cpu: 0, gpu: 0 };
+  for (const row of data.weekly || []) {
+    if (row.length !== 3) { bad(`weekly: row length ${row.length} != 3`); continue; }
+    const [monday, pool, held_h] = row;
+    if (!POOLS.has(pool)) bad(`weekly: unknown pool: ${pool}`);
+    if (!DATE.test(monday) || !Number.isFinite(utcDate(monday))) bad(`weekly: bad date: ${monday}`);
+    else if (new Date(utcDate(monday)).getUTCDay() !== 1) bad(`weekly: not a Monday: ${monday}`);
+    if (!(Number.isFinite(Number(held_h)) && Number(held_h) >= 0)) bad(`weekly: bad held_h: ${held_h}`);
+    else if (POOLS.has(pool)) weeklyHeld[pool] += Number(held_h);
+    weeklySeen.set(`${monday}|${pool}`, (weeklySeen.get(`${monday}|${pool}`) || 0) + 1);
+  }
+  for (const [pool, months] of [['cpu', meta.months_cpu || []], ['gpu', meta.months_gpu || []]]) {
+    const expected = new Set(expectedMondays(months));
+    for (const mon of expected) {
+      const cnt = weeklySeen.get(`${mon}|${pool}`) || 0;
+      if (cnt !== 1) bad(`weekly: expected exactly 1 row for week ${mon} / pool ${pool}, found ${cnt}`);
+    }
+    for (const key of weeklySeen.keys()) {
+      const [mon, p] = key.split('|');
+      if (p === pool && !expected.has(mon)) bad(`weekly: week ${mon} / pool ${pool} lies outside that pool's published months`);
+    }
+  }
+  // sanity: per pool, Σ weekly held_h within 5% of Σ monthly held_h. The dropped
+  // edge days (a partial first/last week) are <= 2% of a year-plus record; a
+  // wrong column or grain is far off.
+  const monthlyHeld = (rows) => (rows || []).reduce((s, r) => s + Number(r[2]), 0);
+  for (const [pool, rows] of [['cpu', data.cpu_monthly], ['gpu', data.gpu_monthly]]) {
+    const m = monthlyHeld(rows);
+    if (m > 0 && Math.abs(weeklyHeld[pool] - m) / m > 0.05)
+      bad(`weekly: ${pool} Σheld_h ${weeklyHeld[pool]} is more than 5% off the monthly Σheld_h ${m}`);
+  }
+
   // ---- headline ----
   const HEADLINE_KEYS = ['cpu_core_h', 'gpu_h', 'jobs'];
   for (const k of Object.keys(data.headline || {})) if (!HEADLINE_KEYS.includes(k)) bad(`unexpected headline key: ${k}`);
@@ -324,4 +383,4 @@ if (errs.length) {
   for (const e of errs) console.error('gate_cluster: FAIL ' + e);
   process.exit(1);
 }
-console.log(`gate_cluster: PASS — cpu_monthly ${data.cpu_monthly.length} / gpu_monthly ${data.gpu_monthly.length} rows, community ${data.community.length} / capacity_monthly ${data.capacity_monthly.length} rows${htmlPath ? ', html scanned' : ''}`);
+console.log(`gate_cluster: PASS — cpu_monthly ${data.cpu_monthly.length} / gpu_monthly ${data.gpu_monthly.length} rows, community ${data.community.length} / capacity_monthly ${data.capacity_monthly.length} rows, weekly ${data.weekly.length} rows${htmlPath ? ', html scanned' : ''}`);
