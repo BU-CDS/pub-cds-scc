@@ -400,6 +400,19 @@ const COMMUNITY_TIPS = {
       has(els['#kpi-cpu'].innerHTML, fmt(cpuCmtyMonth.groups), 'functional: selecting a single month recomputes CPU Research groups via the community "M:' + singleMonth + '" lookup');
       has(els['#kpi-cpu'].innerHTML, cpuCapMonth, 'functional: selecting a single month recomputes CPU Capacity reserved via a capacity_monthly sum over that month');
     }
+    // GPU mirror: singleMonth (CPU's most recent month) is also within GPU's own
+    // coverage today, so the GPU card's new tiles must recompute for it too --
+    // not just fall back on the "no data" replacement exercised by earlyMonth below.
+    if (data.meta.months_gpu.includes(singleMonth)) {
+      const wGpuMonth = sumWindow(data.gpu_monthly, [singleMonth], GPU_FIELDS);
+      const gpuCmtyMonth = communityFor('M:' + singleMonth, 'gpu');
+      const gpuCapMonth = pctOf(wGpuMonth.held, capSumFor([singleMonth], 'gpu'));
+      has(els['#kpi-gpu'].innerHTML, fmt(gpuCmtyMonth.users), 'functional: selecting a single month recomputes GPU Researchers served via the community "M:' + singleMonth + '" lookup');
+      has(els['#kpi-gpu'].innerHTML, fmt(gpuCmtyMonth.groups), 'functional: selecting a single month recomputes GPU Research groups via the community "M:' + singleMonth + '" lookup');
+      has(els['#kpi-gpu'].innerHTML, gpuCapMonth, 'functional: selecting a single month recomputes GPU Capacity reserved via a capacity_monthly sum over that month');
+    } else {
+      bad('functional: expected singleMonth (' + singleMonth + ') to be within GPU coverage so the GPU mirror check can run');
+    }
     const expectMonthRange = rangeTextJS([singleMonth]);
     els['#prange'].textContent === expectMonthRange
       ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
@@ -696,34 +709,62 @@ has(html, 'id="cpu-cov"', 'CPU coverage-note element is present');
   has(styleBlock, '.hnote{font-weight:400;font-size:0.72rem;color:var(--muted);letter-spacing:0;white-space:nowrap}', '.hnote is styled per R5.2 (muted, small, non-wrapping)');
 }
 
-// ---- 20b. fixture check: rebuild the page from a copy of the real data with
-// capacity.cpu.added_12m and capacity.gpu.added_12m swapped, and confirm which
-// panel carries the .hnote span flips with it -- proves the note is genuinely
-// data-driven, not hardcoded to "GPU always present / CPU always absent" ----
-{
+// ---- 20b. fixture checks: rebuild the page from a copy of the real data
+// with capacity.{cpu,gpu}.added_12m mutated, to prove the growth note is
+// genuinely data-driven rather than hardcoded ----
+const buildFixturePage = (mutator) => {
   const tmp = mkdtempSync(join(tmpdir(), 'cluster-page-fixture-'));
   try {
     const pageSrc = readFileSync(join(SDIR, '..', 'build_cluster_page.R'), 'utf8');
     writeFileSync(join(tmp, 'build_cluster_page.R'), pageSrc);
     const fixture = JSON.parse(JSON.stringify(data));
-    const realCpuAdded = Number(fixture.capacity.cpu.added_12m);
-    const realGpuAdded = Number(fixture.capacity.gpu.added_12m);
-    fixture.capacity.cpu.added_12m = realGpuAdded > 0 ? realGpuAdded : 3;
-    fixture.capacity.gpu.added_12m = 0;
+    mutator(fixture);
     mkdirSync(join(tmp, 'output'), { recursive: true });
     writeFileSync(join(tmp, 'output', 'cluster_data.json'), JSON.stringify(fixture));
     execFileSync('Rscript', [join(tmp, 'build_cluster_page.R')], { stdio: 'pipe' });
     const fixtureHtml = readFileSync(join(tmp, 'index.html'), 'utf8');
     const fGpuPanel = fixtureHtml.slice(fixtureHtml.indexOf('id="gpupanel"'), fixtureHtml.indexOf('id="cpupanel"'));
     const fCpuPanel = fixtureHtml.slice(fixtureHtml.indexOf('id="cpupanel"'), fixtureHtml.indexOf('id="sechead"'));
-    const fGpuH3 = (fGpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1];
-    const fCpuH3 = (fCpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1];
+    return {
+      gpuH3: (fGpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1],
+      cpuH3: (fCpuPanel.match(/<h3>([\s\S]*?)<\/h3>/) || ['', ''])[1],
+    };
+  } finally {
+    try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  }
+};
+
+// swapped: capacity.cpu.added_12m and capacity.gpu.added_12m swapped, confirm
+// which panel carries the .hnote span flips with it -- proves the note is
+// genuinely data-driven, not hardcoded to "GPU always present / CPU always absent"
+{
+  try {
+    const realCpuAdded = Number(data.capacity.cpu.added_12m);
+    const realGpuAdded = Number(data.capacity.gpu.added_12m);
+    const { gpuH3: fGpuH3, cpuH3: fCpuH3 } = buildFixturePage((fixture) => {
+      fixture.capacity.cpu.added_12m = realGpuAdded > 0 ? realGpuAdded : 3;
+      fixture.capacity.gpu.added_12m = 0;
+    });
     not(fGpuH3, 'class="hnote"', 'fixture (swapped): GPU panel <h3> carries no .hnote once its added_12m is 0');
     has(fCpuH3, 'class="hnote"', 'fixture (swapped): CPU panel <h3> now carries the .hnote span once its added_12m is > 0 -- the note flips panels with the data');
   } catch (e) {
     bad('fixture (swapped) growth-note rebuild failed: ' + (e && e.message ? e.message : e));
-  } finally {
-    try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  }
+}
+
+// singular: added_12m === 1 must render the singular word ("1 GPU added...",
+// never "1 GPUs added...")
+{
+  try {
+    const { gpuH3: fGpuH3, cpuH3: fCpuH3 } = buildFixturePage((fixture) => {
+      fixture.capacity.gpu.added_12m = 1;
+      fixture.capacity.cpu.added_12m = 0;
+    });
+    has(fGpuH3, '<span class="hnote">1 GPU added in the past 12 months</span>', 'fixture (added_12m=1): GPU panel <h3> uses the singular "GPU" wording, not "GPUs"');
+    not(fGpuH3, '1 GPUs added', 'fixture (added_12m=1): GPU panel <h3> never renders the plural "GPUs" wording for n=1');
+    not(fCpuH3, 'class="hnote"', 'fixture (added_12m=1): CPU panel <h3> still carries no .hnote (its added_12m stayed 0)');
+  } catch (e) {
+    bad('fixture (added_12m=1) growth-note rebuild failed: ' + (e && e.message ? e.message : e));
   }
 }
 
