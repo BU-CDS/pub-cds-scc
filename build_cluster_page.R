@@ -13,7 +13,7 @@
 # (livePanel(), its KPI card, cardGB) as the read-only source of visual
 # truth. Neither sibling repo is written to.
 #
-# Reads:  output/cluster_data.json          (contract v2, Task 7's strip+combine emit)
+# Reads:  output/cluster_data.json          (contract v2, the strip+combine emit)
 # Assets (base64-embedded, read from the sibling clone, never copied in):
 #   $PUB_CPU_CLONE/assets/bu_plate_white.png
 #   $PUB_CPU_CLONE/assets/faculty_compt_data_sci_signature_toptier_rgb.png
@@ -36,7 +36,10 @@ stopifnot(file.exists(dataf))
 data_json <- paste(readLines(dataf, warn = FALSE), collapse = "\n")   # embedded verbatim as the page's DATA
 d <- fromJSON(dataf, simplifyVector = TRUE)
 
-b64 <- function(path) if (file.exists(path)) paste(system2("base64", c("-w0", path), stdout = TRUE), collapse = "") else ""
+b64 <- function(path) {
+  if (!file.exists(path)) stop("build_cluster_page: missing asset ", path)
+  paste(system2("base64", c("-w0", path), stdout = TRUE), collapse = "")
+}
 plate_uri     <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "bu_plate_white.png")))
 emblem_uri    <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "faculty_compt_data_sci_signature_toptier_rgb.png")))
 font_uri      <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedSemibold.woff2")))
@@ -78,6 +81,22 @@ range_text <- function(months) {
   if (a == b) return(month_label(a))
   a_lbl <- if (substr(a, 1, 4) == substr(b, 1, 4)) MON[as.integer(substr(a, 6, 7))] else month_label(a)
   paste0(a_lbl, " – ", month_label(b))
+}
+
+# Per-card coverage note: the GPU series (trailing ~6 months by design) and the
+# CPU series (full history) rarely cover the same window, so a wide selection
+# ("All months", an early single month) can sum a pool's KPI card over months
+# that pool has no rows for at all -- correct arithmetic, misleading framing
+# (reads as "the pool did nothing" rather than "no data here"). Mirrors the
+# page's own JS coverageNote() so the SSR default and a JS recompute agree.
+# Returns list(note=, empty=): note is a caption ("GPU data: Feb – Jul 2026")
+# shown when the window is only partly covered; empty is TRUE when the pool
+# has no rows anywhere in the window (its KPI tiles are replaced entirely).
+coverage_note <- function(months, pool_months, pool_label) {
+  covered <- intersect(months, pool_months)
+  if (length(covered) == length(months)) return(list(note = "", empty = FALSE))
+  if (length(covered) == 0) return(list(note = "", empty = TRUE))
+  list(note = paste0(pool_label, " data: ", range_text(covered)), empty = FALSE)
 }
 
 # ---- pool panels: one hardware row per capacity.types[] entry. No live data
@@ -144,13 +163,13 @@ CPU_TIPS <- list(
   utilized = "CPU time the jobs actually consumed (the accounting cpu field), capped per job at <b>Held</b>. Higher is better.",
   under = "<b>Held</b> core-hours the jobs left unused: <b>Held</b> − <b>Utilized</b>. Lower is better; some is unavoidable.",
   eff = "CPU time used over CPU time reserved.",
-  wallacc = "Requested walltime actually used, over jobs with an <b>explicit</b> h_rt only — not the injected 12h default; coverage shown as n. Σused ÷ Σrequested; an explicit 12h request is indistinguishable from the default.",
+  wallacc = "Requested walltime actually used, over jobs with an <b>explicit</b> h_rt only — not the injected 12h default. Σused ÷ Σrequested; an explicit 12h request is indistinguishable from the default.",
   fail = "How much <b>Held</b> time went to jobs that broke? Hard failures only. Lower is better.",
   wkill = "How much <b>Held</b> time went to jobs SGE killed at their own h_rt. Not good or bad on its own — on the 12h scavenger queues it often just means hitting the scavenger ceiling."
 )
 GPU_TIPS <- list(
   held = "Total GPU hours held/reserved by jobs.",
-  busy = "How hard did the GPU(s) work? <b>Utilized</b> over <b>Held</b>, split into the three tiers. Higher is better.",
+  busy = "How hard did the GPU(s) work? <b>Utilized</b> over <b>Held</b>. Higher is better.",
   idle = "How much held time had a process but idle kernels? <b>Held</b> − <b>Utilized</b> − <b>Non-Utilized</b>. Lower is better; some is unavoidable.",
   residle = "Was the GPU held with no process at all? Each no-process sample counts its full 5 minutes. The worst waste. Lower is better.",
   kwh = "Energy from sampled GPU power.",
@@ -188,8 +207,10 @@ gpu_kpi_html <- function(T) {
 }
 
 window3 <- d$meta$window3
-default_cpu_kpi <- cpu_kpi_html(sum_cpu_window(window3))
-default_gpu_kpi <- gpu_kpi_html(sum_gpu_window(window3))
+cpu_cov <- coverage_note(window3, d$meta$months_cpu, "CPU")
+gpu_cov <- coverage_note(window3, d$meta$months_gpu, "GPU")
+default_cpu_kpi <- if (cpu_cov$empty) '<div class="nodata">No CPU data for this period</div>' else cpu_kpi_html(sum_cpu_window(window3))
+default_gpu_kpi <- if (gpu_cov$empty) '<div class="nodata">No GPU data for this period</div>' else gpu_kpi_html(sum_gpu_window(window3))
 default_range <- range_text(window3)
 
 # ---- period controls: a segmented [Past 3 | Past 6 | All] bar (default:
@@ -248,6 +269,8 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 #tip{position:fixed;z-index:99;max-width:300px;background:#0f1f3a;color:#eaf1fb;font-size:0.719rem;line-height:1.45;padding:7px 10px;border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,.28);pointer-events:none;display:none;}#tip b{color:#9ec5ff;font-weight:600;}
 .kpi{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 18px;margin:0;}.kpi .k{padding:0;}
 .kpi .kn{font-size:1.188rem;font-weight:bold;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.15;}.kpi .kl{font-size:0.688rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;white-space:nowrap;}.kpi .k[data-tip]{cursor:help;}
+.covnote{font-size:0.7rem;color:var(--muted);margin:-4px 0 8px;}.covnote:empty{display:none;margin:0;}
+.nodata{color:var(--muted);font-size:0.8rem;padding:8px 0;grid-column:1/-1;}
 .livewrap{margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;}
 .liveupd{color:var(--text);font-size:0.75rem;white-space:nowrap;}
 .liveupd a{color:inherit;text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:2px;}
@@ -284,16 +307,20 @@ default_range,
 r"-----(</span></div>
 <div class="ctl">
 <span class="seg"><button id="seg-p3" class="on" data-w="past3">Past 3 months</button><button id="seg-p6" data-w="past6">Past 6 months</button><button id="seg-all" data-w="all">All months</button></span>
-<select id="pmonth">)-----",
+<select id="pmonth" aria-label="Month">)-----",
 month_select_options,
 r"-----(</select>
 </div>
 </div>
 <div class="deckrow">
-<div class="deck" id="gpucard"><h3>GPU Totals</h3><div class="kpi" id="kpi-gpu">)-----",
+<div class="deck" id="gpucard"><h3>GPU Totals</h3><div class="covnote" id="gpu-cov">)-----",
+gpu_cov$note,
+r"-----(</div><div class="kpi" id="kpi-gpu">)-----",
 default_gpu_kpi,
 r"-----(</div></div>
-<div class="deck" id="cpucard"><h3>CPU Totals</h3><div class="kpi" id="kpi-cpu">)-----",
+<div class="deck" id="cpucard"><h3>CPU Totals</h3><div class="covnote" id="cpu-cov">)-----",
+cpu_cov$note,
+r"-----(</div><div class="kpi" id="kpi-cpu">)-----",
 default_cpu_kpi,
 r"-----(</div></div>
 </div>
@@ -306,21 +333,21 @@ const DATA = )-----",
 data_json,
 r"-----(;
 const $=s=>document.querySelector(s);
-function fmt(x){return Math.round(x).toLocaleString();}
-function fmth(x){if(x==null)return '—';if(x<=0)return '0';if(x<1)return '&lt;1';return Math.round(x).toLocaleString();}
+function fmt(x){return Math.round(x).toLocaleString('en-US');}
+function fmth(x){if(x==null)return '—';if(x<=0)return '0';if(x<1)return '&lt;1';return Math.round(x).toLocaleString('en-US');}
 const kpi=(n,l,t)=>'<div class=k'+(t?' data-tip="'+t+'"':'')+'><div class=kl>'+l+'</div><div class=kn>'+n+'</div></div>';
 const CPU_TIPS={
  held:'Core-hours reserved by jobs: cores held × hours run, busy or not. The denominator of everything.',
  utilized:'CPU time the jobs actually consumed (the accounting cpu field), capped per job at <b>Held</b>. Higher is better.',
  under:'<b>Held</b> core-hours the jobs left unused: <b>Held</b> − <b>Utilized</b>. Lower is better; some is unavoidable.',
  eff:'CPU time used over CPU time reserved.',
- wallacc:'Requested walltime actually used, over jobs with an <b>explicit</b> h_rt only — not the injected 12h default; coverage shown as n. Σused ÷ Σrequested; an explicit 12h request is indistinguishable from the default.',
+ wallacc:'Requested walltime actually used, over jobs with an <b>explicit</b> h_rt only — not the injected 12h default. Σused ÷ Σrequested; an explicit 12h request is indistinguishable from the default.',
  fail:'How much <b>Held</b> time went to jobs that broke? Hard failures only. Lower is better.',
  wkill:'How much <b>Held</b> time went to jobs SGE killed at their own h_rt. Not good or bad on its own — on the 12h scavenger queues it often just means hitting the scavenger ceiling.'
 };
 const GPU_TIPS={
  held:'Total GPU hours held/reserved by jobs.',
- busy:'How hard did the GPU(s) work? <b>Utilized</b> over <b>Held</b>, split into the three tiers. Higher is better.',
+ busy:'How hard did the GPU(s) work? <b>Utilized</b> over <b>Held</b>. Higher is better.',
  idle:'How much held time had a process but idle kernels? <b>Held</b> − <b>Utilized</b> − <b>Non-Utilized</b>. Lower is better; some is unavoidable.',
  residle:'Was the GPU held with no process at all? Each no-process sample counts its full 5 minutes. The worst waste. Lower is better.',
  kwh:'Energy from sampled GPU power.',
@@ -376,9 +403,20 @@ function rangeText(months){
   const sameYear=a.slice(0,4)===b.slice(0,4);
   return monthLabel(a,!sameYear)+' – '+monthLabel(b,true);
 }
+function coverageNote(months,poolMonths,poolLabel){
+  const set=new Set(poolMonths);
+  const covered=months.filter(m=>set.has(m));
+  if(covered.length===months.length)return {note:'',empty:false};
+  if(covered.length===0)return {note:'',empty:true};
+  return {note:poolLabel+' data: '+rangeText(covered),empty:false};
+}
 function applyWindow(months){
-  $('#kpi-cpu').innerHTML=cpuKpiHtml(sumCpu(months));
-  $('#kpi-gpu').innerHTML=gpuKpiHtml(sumGpu(months));
+  const cpuCov=coverageNote(months,DATA.meta.months_cpu,'CPU');
+  const gpuCov=coverageNote(months,DATA.meta.months_gpu,'GPU');
+  $('#cpu-cov').textContent=cpuCov.note;
+  $('#gpu-cov').textContent=gpuCov.note;
+  $('#kpi-cpu').innerHTML=cpuCov.empty?'<div class="nodata">No CPU data for this period</div>':cpuKpiHtml(sumCpu(months));
+  $('#kpi-gpu').innerHTML=gpuCov.empty?'<div class="nodata">No GPU data for this period</div>':gpuKpiHtml(sumGpu(months));
   $('#prange').textContent=rangeText(months);
 }
 const SEGS=[['#seg-p3','past3'],['#seg-p6','past6'],['#seg-all','all']];

@@ -53,7 +53,7 @@ for (const needle of ['fetch(', 'XMLHttpRequest', 'localStorage', 'document.cook
 
 // ---- 1. containment, not just order: a stray </div> can close a section early while
 // every string check still passes. Tiny stack parser over the static markup (copied
-// verbatim from the Task-3 test / cpu-cds-scc/scripts/test_page.mjs).
+// verbatim from cpu-cds-scc/scripts/test_page.mjs's own containment parser).
 const parentOf = (() => {
   const body = html.slice(html.indexOf('<body')).replace(/<script[\s\S]*?<\/script>/g, '');
   const stack = [], parent = {}; const voids = new Set(['br', 'img', 'input', 'meta', 'link', 'hr']);
@@ -130,6 +130,7 @@ for (const lbl of ['Past 3 months', 'Past 6 months', 'All months'])
   ? ok('segmented bar defaults to "Past 3 months" active (class="on")')
   : bad('segmented bar default "on" button is not Past 3 months');
 has(ctlBlock, '<select id="pmonth"', '.ctl carries the month-only <select>');
+has(ctlBlock, 'aria-label="Month"', 'the month select carries an accessible name (aria-label="Month")');
 has(ctlBlock, '<option value="" selected>Month', 'month select defaults to the neutral "Month…" placeholder');
 for (const m of [...new Set([...data.meta.months_cpu.slice(-2), ...data.meta.months_gpu.slice(-2)])])
   has(ctlBlock, '<option value="' + m + '"', 'month select lists month ' + m);
@@ -200,6 +201,8 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
     '#kpi-cpu': makeEl('kpi-cpu'),
     '#kpi-gpu': makeEl('kpi-gpu'),
     '#prange': makeEl('prange'),
+    '#gpu-cov': makeEl('gpu-cov'),
+    '#cpu-cov': makeEl('cpu-cov'),
   };
   const document = {
     querySelector: (sel) => els[sel] || makeEl(sel.replace(/^[.#]/, '')),
@@ -228,6 +231,21 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
       ? ok('functional: clicking "All months" updates the range text correctly ("' + expectAllRange + '")')
       : bad('functional: range text after "All months" is "' + els['#prange'].textContent + '", expected "' + expectAllRange + '"');
 
+    // I1: GPU's own series (trailing) rarely covers the full union -- "All months"
+    // should caption the GPU card with its actual coverage, while still rendering
+    // real (not zeroed-out-looking) tiles; CPU's series covers the union, so its
+    // caption stays empty.
+    const gpuCoveredAll = data.meta.months_gpu.filter(m => allUnion.includes(m));
+    const expectGpuCovAll = (gpuCoveredAll.length > 0 && gpuCoveredAll.length < allUnion.length)
+      ? 'GPU data: ' + rangeTextJS(gpuCoveredAll) : '';
+    els['#gpu-cov'].textContent === expectGpuCovAll
+      ? ok('functional: "All months" shows the GPU coverage note ("' + expectGpuCovAll + '")')
+      : bad('functional: GPU coverage note after "All months" is "' + els['#gpu-cov'].textContent + '", expected "' + expectGpuCovAll + '"');
+    has(els['#kpi-gpu'].innerHTML, 'Held GPU-h', 'functional: GPU tiles still render for "All months" (partial coverage, not replaced)');
+    els['#cpu-cov'].textContent === ''
+      ? ok('functional: CPU coverage note stays empty for "All months" (CPU\'s own series covers the whole union)')
+      : bad('functional: CPU coverage note should be empty for "All months", got "' + els['#cpu-cov'].textContent + '"');
+
     // pick a single month: cards + range text should recompute to that one month
     const singleMonth = data.meta.months_cpu[data.meta.months_cpu.length - 1];
     els['#pmonth'].value = singleMonth;
@@ -239,6 +257,18 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
     els['#prange'].textContent === expectMonthRange
       ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
       : bad('functional: range text after a single-month pick is "' + els['#prange'].textContent + '", expected "' + expectMonthRange + '"');
+
+    // I1: a month before GPU's own series began (CPU's earliest month) must
+    // replace the GPU tiles with a "no data" message, not render misleading
+    // zero-value tiles that read as "the GPU pool did nothing"
+    const earlyMonth = data.meta.months_cpu[0];
+    els['#pmonth'].value = earlyMonth;
+    handlers.pmonth.forEach(fn => fn({ target: els['#pmonth'] }));
+    has(els['#kpi-gpu'].innerHTML, 'No GPU data for this period', 'functional: a pre-GPU-range month (' + earlyMonth + ') replaces the GPU tiles with "No GPU data for this period"');
+    els['#gpu-cov'].textContent === ''
+      ? ok('functional: GPU coverage note stays empty when GPU has no data at all (the "no data" tile message carries it instead)')
+      : bad('functional: GPU coverage note should be empty (not a caption) when GPU has zero data, got "' + els['#gpu-cov'].textContent + '"');
+    has(els['#kpi-cpu'].innerHTML, 'Held core-h', 'functional: CPU tiles still render normally for its own earliest month');
   } catch (e) {
     bad('functional: page JS threw during simulated period-control interaction -- ' + (e && e.message ? e.message : e));
   }
@@ -275,7 +305,7 @@ not(styleBlock, '.periodbar', 'the old .periodbar rules were removed (replaced b
 not(styleBlock, '#periodctl', 'the old #periodctl deck rules were removed (replaced by the .sechead section header)');
 has(styleBlock, '.sechead{flex-wrap:wrap', 'the section header wraps controls under the title on narrow screens (<=900px)');
 
-// ---- 11. asymmetric pool split (maintainer round 2): CPU container wider so
+// ---- 11. asymmetric pool split: CPU container wider so
 // the 6-cluster E5 row renders on one line, panel heights come closer ----
 has(styleBlock, '#gpupanel,#gpucard{flex:0 1 40%', 'GPU panel + totals card take the narrower 40% flex share');
 has(styleBlock, '#cpupanel,#cpucard{flex:1 1 0', 'CPU panel + totals card take the wider (~60%) flex share');
@@ -288,14 +318,14 @@ not(styleBlock, '.pool-cpu .hwnodes{display:grid', 'CPU node grid override was d
   ? ok('GPU block width is retuned down (40% column is narrower than the old 50/50 half)')
   : bad('--gpu-w is not retuned to the fitted clamp(13px,0.93vw,40px)');
 
-// ---- 12. even column gutters (maintainer round 4): a uniform-gutter grid with
+// ---- 12. even column gutters: a uniform-gutter grid with
 // snug per-pool label/value column widths, instead of a one-size-fits-all
 // flex-basis that left ~70px of dead space before short GPU labels ----
 has(styleBlock, '.hwcols,.hwrow{display:grid;grid-template-columns:var(--lblw) var(--valw) 1fr;column-gap:18px', 'hardware rows use a uniform-gutter grid (one column-gap, per-pool column widths via --lblw/--valw)');
 has(styleBlock, '.pool-gpu{--lblw:80px;--valw:56px', 'GPU panel gets snug columns sized to its longest label/value ("RTXP6000" / "144 GB")');
 has(styleBlock, '.pool-cpu{--lblw:130px;--valw:64px', 'CPU panel keeps its wider columns sized to its longest label/value ("Xeon E5-2660\\u00a0v3" / "32 cores")');
 
-// ---- 13. sticky footer + wide-screen growth (maintainer round 6) ----
+// ---- 13. sticky footer + wide-screen growth ----
 has(styleBlock, 'body{display:flex;flex-direction:column', 'body is a flex column (sticky-footer pattern)');
 has(styleBlock, 'main{max-width:min(var(--content-max),98vw);width:100%;margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto', 'main grows to fill the flex column (flex:1 0 auto)');
 has(styleBlock, 'main{max-width:min(var(--content-max),98vw);width:100%', 'main carries width:100% -- in a column-flex body a margin:0 auto item is fit-content wide unless width is set, and the >=1700px growth rule + all fit margins assume main = min(var(--content-max),98vw)');
@@ -314,7 +344,7 @@ has(styleBlock, '.pool-gpu{--gpu-w:clamp(22px,1.4vw,40px);--gpu-h:clamp(11px,0.7
 has(styleBlock, '.deck{padding:13px 14px', 'wide-screen media block gives decks slightly airier padding');
 has(styleBlock, '.kpi .kn{font-size:1.3rem', 'wide-screen media block gives KPI numbers a larger font');
 
-// ---- 14. tighter page margins (maintainer round 7): 96vw -> 98vw, content-pad
+// ---- 14. tighter page margins: 96vw -> 98vw, content-pad
 // 20px -> 12px, deck padding tightened to match ----
 has(styleBlock, '--content-max:2100px;--content-pad:12px', 'content-pad is tightened to 12px');
 has(styleBlock, 'main{max-width:min(var(--content-max),98vw)', 'main uses the wider 98vw outer gutter');
@@ -322,7 +352,7 @@ has(styleBlock, '.hwrap{max-width:min(var(--content-max),98vw)', 'the header loc
 has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw)', 'the footer (.pagefoot) uses the wider 98vw outer gutter (stays aligned with the decks)');
 has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px', 'deck padding is tightened to 11px 12px below the wide-screen breakpoint');
 
-// ---- 15. footer mirrors the portals (maintainer round 10) ----
+// ---- 15. footer mirrors the portals ----
 {
   const footerStart = html.indexOf('<footer class="pagefoot"');
   const footerEnd = html.indexOf('</footer>', footerStart) + '</footer>'.length;
@@ -369,7 +399,7 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
   ];
   for (const rule of FOOTER_CSS_RULES) has(styleBlock, rule, 'footer CSS rule present verbatim: ' + rule.slice(0, 44) + (rule.length > 44 ? '...' : ''));
   not(html, 'ft-text', '.ft-text is gone from both markup and CSS');
-  has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw);width:100%', '.pagefoot carries width:100% -- in a column-flex body (round 8) a margin:0 auto item is fit-content wide unless width is set, which was shrink-wrapping the footer\'s three zones into a jumbled center block');
+  has(styleBlock, '.pagefoot{max-width:min(var(--content-max),98vw);width:100%', '.pagefoot carries width:100% -- in a column-flex body a margin:0 auto item is fit-content wide unless width is set, which was shrink-wrapping the footer\'s three zones into a jumbled center block');
 
   const LIVEWRAP_PREFIX = '<div class="livewrap"><span class="liveupd"><a href="https://rcs.bu.edu" target="_blank" rel="noopener">Data from BU SCC</a> · updated quarterly · ';
   const livewrapCount = html.split(LIVEWRAP_PREFIX).length - 1;
@@ -383,10 +413,10 @@ has(styleBlock, '.deck{background:var(--surface);border:1px solid var(--border);
     ? ok('livewrap sits between <main> and the first deckrow')
     : bad('livewrap is not positioned between <main> and the first deckrow');
   not(footerBlock, 'updated quarterly', 'the footer no longer carries the data stamp (moved to livewrap)');
-  not(html, 'SGE accounting', '"SGE accounting" no longer appears anywhere (maintainer round 13: renamed to "Data from BU SCC")');
+  not(html, 'SGE accounting', '"SGE accounting" no longer appears anywhere (status line reads "Data from BU SCC")');
 }
 
-// ---- 16. livewrap must not double-pad (maintainer round 11): it is nested
+// ---- 16. livewrap must not double-pad: it is nested
 // inside <main>, which already applies the 98vw max-width and content-pad,
 // so .livewrap itself must carry neither -- only the portals' top-level
 // .livewrap needs its own gutter ----
@@ -398,11 +428,42 @@ has(styleBlock, '.livewrap{margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap
     : bad('.livewrap still double-pads: ' + livewrapRule);
 }
 
-// ---- 17. status-line stamp copy + link (maintainer round 13): "Data from
+// ---- 17. status-line stamp copy + link: "Data from
 // SGE accounting and gpustats" renamed to "Data from BU SCC", hyperlinked
 // to rcs.bu.edu; " · updated quarterly · <date>" stays plain text ----
 has(styleBlock, '.liveupd a{color:inherit;text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:2px;}', '.liveupd a carries the underline-link styling');
 has(styleBlock, '.liveupd a:hover{color:var(--used);text-decoration-color:currentColor;}', '.liveupd a:hover carries the hover-color rule');
+
+// ---- 18. embedded assets are never silently empty (b64() now fails closed on a
+// missing file at build time; this checks the payloads it does embed aren't
+// near-empty either -- each must clear a real floor size) ----
+{
+  const payloads = [...html.matchAll(/data:(?:image\/png|font\/woff2);base64,([A-Za-z0-9+/=]+)/g)].map(m => m[1]);
+  payloads.length === 4
+    ? ok('found exactly 4 embedded base64 payloads (plate, emblem, 2 font weights)')
+    : bad('found ' + payloads.length + ' embedded base64 payloads, want 4 (plate, emblem, 2 fonts)');
+  payloads.forEach((p, i) => {
+    p.length > 1024
+      ? ok('embedded asset payload #' + (i + 1) + ' clears the empty-file floor (' + p.length + ' base64 chars)')
+      : bad('embedded asset payload #' + (i + 1) + ' is suspiciously small (' + p.length + ' base64 chars) -- possible truncated/near-empty asset');
+  });
+}
+
+// ---- 19. per-card coverage notes: "<Pool> data: <range>" when a selected
+// window is only partly covered by that pool's own series, "No <Pool> data for
+// this period" (tiles replaced) when not covered at all, nothing when fully
+// covered. window3 (the default) is, by construction, fully covered by both
+// pools, so both notes render empty here; the functional block above exercises
+// the partial- and zero-coverage cases ----
+has(html, 'id="gpu-cov"', 'GPU coverage-note element is present');
+has(html, 'id="cpu-cov"', 'CPU coverage-note element is present');
+{
+  const gpuCovDefault = (html.match(/id="gpu-cov">([^<]*)</) || ['', '(absent)'])[1];
+  const cpuCovDefault = (html.match(/id="cpu-cov">([^<]*)</) || ['', '(absent)'])[1];
+  (gpuCovDefault === '' && cpuCovDefault === '')
+    ? ok('window3 (the default) is fully covered by both pools, so both coverage notes render empty')
+    : bad('default-window coverage notes are not empty: gpu="' + gpuCovDefault + '", cpu="' + cpuCovDefault + '"');
+}
 
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
