@@ -32,7 +32,8 @@ every step is green:
    or host name survives the aggregation.
 2. `scripts/gate_cluster.mjs` — whitelist / blocklist / conservation gate over
    that JSON: every model, card, class and period must be on the allow-list,
-   no host names or registry codes anywhere, totals must reconcile.
+   no host names or registry codes anywhere, totals must reconcile (the
+   weekly series against the monthly, the headline against the tables).
 3. `build_cluster_page.R` — renders `index.html` (panels, period selector,
    totals) with the assets embedded.
 4. `scripts/test_page.mjs` + `validate.mjs` — structure/containment tests and

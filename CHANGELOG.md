@@ -2,7 +2,7 @@
 
 All notable changes to the public cluster page.
 
-## Unreleased
+## 2026-09-01 — published (cluster.cds.bu.edu)
 
 - **Docs: inputs and cadence after the GPU-source change** (2026-09-01,
   `README.md`): the page's description gains the over-time charts; the
