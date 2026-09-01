@@ -48,12 +48,21 @@ cur_d   <- as.Date(paste0(format(Sys.Date(), "%Y-%m"), "-01"))
 prev1_d <- seq(cur_d,   by = "-1 month", length.out = 2)[2]
 prev2_d <- seq(prev1_d, by = "-1 month", length.out = 2)[2]
 prev3_d <- seq(prev2_d, by = "-1 month", length.out = 2)[2]
+prev4_d <- seq(prev3_d, by = "-1 month", length.out = 2)[2]
+prev5_d <- seq(prev4_d, by = "-1 month", length.out = 2)[2]
+prev6_d <- seq(prev5_d, by = "-1 month", length.out = 2)[2]
+prev7_d <- seq(prev6_d, by = "-1 month", length.out = 2)[2]
 cur     <- format(cur_d,   "%Y-%m")
 prev1   <- format(prev1_d, "%Y-%m")
 prev2   <- format(prev2_d, "%Y-%m")
 prev3   <- format(prev3_d, "%Y-%m")
+prev4   <- format(prev4_d, "%Y-%m")
+prev5   <- format(prev5_d, "%Y-%m")
+prev6   <- format(prev6_d, "%Y-%m")
+prev7   <- format(prev7_d, "%Y-%m")
 months3 <- c(prev2, prev1, cur)
 months4 <- c(prev3, prev2, prev1, cur)   # 3 complete months once cur is dropped
+months7 <- c(prev7, prev6, prev5, prev4, prev3, prev2, prev1)   # oldest -> newest, cur excluded
 
 # calendar helpers for the proration/added_12m fixtures below
 month_start   <- function(m) as.Date(paste0(m, "-01"))
@@ -404,43 +413,53 @@ pass("window3 ending at the month just closed (1 month back) passes the lag guar
 # 7) Community membership (contract v3): distinct users/groups per
 #    (M:, P3, P6, ALL) window key, for both pools -- CPU from its own
 #    internal emit's (p, user, proj) columns, GPU from the NEW internal
-#    de-identified emit's (p, user, proj) columns. Three complete months
-#    (prev3, prev2, prev1; cur dropped), overlapping user codes and
-#    projects across months so per-month counts differ from the
-#    combined-window counts.
+#    de-identified emit's (p, user, proj) columns.
+#
+#    7 complete months (prev7..prev1; cur dropped), with UNEQUAL per-pool
+#    coverage: CPU's own published month list is all 7; GPU's own
+#    published month list (months_gpu, from the PUBLIC gpu emit) is only
+#    the newest 5 (prev5..prev1) -- but the GPU INTERNAL de-identified
+#    emit (community's actual data source) is given rows for the full 7
+#    months anyway, exactly like the real GPU pool (a daily-ish internal
+#    emit with more history than its own quarterly public monthly table).
+#    RULING (2026-09-01): a pool's community counts are the requested
+#    window intersected with that SAME pool's own published months, so
+#    the internal emit's extra prev7/prev6 rows must never surface in any
+#    GPU window -- not even "M:prev7"/"M:prev6" themselves (0/0, not an
+#    error) -- and GPU's P6 and ALL end up numerically equal here (both
+#    reduce to GPU's own 5-month range), which is the correct, intended
+#    behaviour, not a fixture coincidence. Every user/proj code is unique
+#    to its month (no cross-month overlap) so each window's expected
+#    count is just 2x its month count -- easy to hand-verify.
 # =====================================================================
-community_cpu_rows <- data.frame(
-  p          = c(prev3, prev3, prev2, prev2, prev1, prev1),
-  node_class = c("m1024","standard","m1024","standard","m1024","standard"),
-  user       = c("u-1001","u-1002","u-1002","u-1003","u-1001","u-1004"),
-  proj       = c("alpha","beta","beta","gamma","alpha","delta"),
-  held = c(10,10,10,10,10,10), utilized = c(5,5,5,5,5,5),
-  fail_h = c(0,0,0,0,0,0), wkill_h = c(0,0,0,0,0,0), njobs = c(1,1,1,1,1,1),
-  wa_used_h = c(5,5,5,5,5,5), wa_req_h = c(6,6,6,6,6,6),
+months5_gpu <- c(prev5, prev4, prev3, prev2, prev1)   # GPU's own (narrower) published months
+
+mk_rows <- function(months, extra_cols) {
+  do.call(rbind, lapply(seq_along(months), function(i) {
+    n <- length(months) - i + 1   # oldest month gets the highest number, newest gets 1
+    data.frame(p = rep(months[i], 2), user = paste0("u", n, c("a", "b")),
+               proj = paste0("p", n, c("a", "b")), extra_cols, stringsAsFactors = FALSE)
+  }))
+}
+community_cpu_rows <- mk_rows(months7, data.frame(
+  node_class = c("m1024", "standard"), held = 10, utilized = 5, fail_h = 0,
+  wkill_h = 0, njobs = 1, wa_used_h = 5, wa_req_h = 6))
+community_cpu_rows$user <- paste0("cpu-", community_cpu_rows$user)
+community_cpu_rows$proj <- paste0("cpu-", community_cpu_rows$proj)
+
+gpu_pub_rows7 <- data.frame(
+  p = rep(months5_gpu, each = 2), card = c("H200", "L40S"),
+  held = 100, real = 80, residle_h = 5, kwh = 50, vram_h = 40, fail_h = 1, wkill_h = 0, njobs = 2,
   stringsAsFactors = FALSE
 )
-gpu_pub_rows4 <- data.frame(
-  p         = c(prev3, prev3, prev2, prev2, prev1, prev1),
-  card      = c("H200","L40S","H200","L40S","H200","L40S"),
-  held = c(300,200,300,200,310,210), real = c(250,150,250,150,260,160),
-  residle_h = c(10,8,10,8,11,9), kwh = c(500,300,500,300,510,310),
-  vram_h = c(280,180,280,180,290,190), fail_h = c(5,3,5,3,6,4),
-  wkill_h = c(2,1,2,1,2,1), njobs = c(20,10,20,10,21,11),
-  stringsAsFactors = FALSE
-)
-community_gpu2_rows <- data.frame(
-  p     = c(prev3, prev3, prev3, prev2, prev1, prev1),
-  card  = c("H200","H200","H200","H200","H200","H200"),
-  user  = c("u-2001","u-2002","u-2003","u-2001","u-2001","u-2004"),
-  proj  = c("g-one","g-two","g-three","g-one","g-one","g-four"),
-  held = c(1,1,1,1,1,1), real = c(1,1,1,1,1,1), residle_h = c(0,0,0,0,0,0),
-  kwh = c(1,1,1,1,1,1), vram_h = c(1,1,1,1,1,1), fail_h = c(0,0,0,0,0,0),
-  wkill_h = c(0,0,0,0,0,0), njobs = c(1,1,1,1,1,1),
-  stringsAsFactors = FALSE
-)
-f7 <- make_fixture(cpu_rows_in = community_cpu_rows, cpu_months = months4,
-                    gpu_rows_in = gpu_pub_rows4, gpu_months = months4,
-                    gpu2_rows_in = community_gpu2_rows, gpu2_months = months4)
+community_gpu2_rows <- mk_rows(months7, data.frame(card = "H200", held = 1, real = 1, residle_h = 0,
+                                                    kwh = 1, vram_h = 1, fail_h = 0, wkill_h = 0, njobs = 1))
+community_gpu2_rows$user <- paste0("gpu-", community_gpu2_rows$user)
+community_gpu2_rows$proj <- paste0("gpu-", community_gpu2_rows$proj)
+
+f7 <- make_fixture(cpu_rows_in = community_cpu_rows, cpu_months = c(months7, cur),
+                    gpu_rows_in = gpu_pub_rows7, gpu_months = c(months5_gpu, cur),
+                    gpu2_rows_in = community_gpu2_rows, gpu2_months = c(months7, cur))
 r7 <- run_script(f7)
 stopifnot("community fixture run must exit 0" = r7$status == 0)
 out7 <- fromJSON(file.path(f7$fx, "output", "cluster_data.json"), simplifyVector = TRUE, simplifyMatrix = TRUE)
@@ -451,24 +470,30 @@ check_comm <- function(key, pool, users, groups) {
   stopifnot(nrow(r) == 1)
   stopifnot(as.numeric(r[1, 3]) == users && as.numeric(r[1, 4]) == groups)
 }
-check_comm(paste0("M:", prev3), "cpu", 2, 2)   # {u-1001,u-1002} / {alpha,beta}
-check_comm(paste0("M:", prev2), "cpu", 2, 2)   # {u-1002,u-1003} / {beta,gamma}
-check_comm(paste0("M:", prev1), "cpu", 2, 2)   # {u-1001,u-1004} / {alpha,delta}
-check_comm("P3",  "cpu", 4, 4)                 # union across the 3 months
-check_comm("P6",  "cpu", 4, 4)                 # only 3 months exist -> same as P3/ALL
-check_comm("ALL", "cpu", 4, 4)
-check_comm(paste0("M:", prev3), "gpu", 3, 3)   # {u-2001,u-2002,u-2003} / {g-one,g-two,g-three}
-check_comm(paste0("M:", prev2), "gpu", 1, 1)   # {u-2001} / {g-one}
-check_comm(paste0("M:", prev1), "gpu", 2, 2)   # {u-2001,u-2004} / {g-one,g-four}
-check_comm("P3",  "gpu", 4, 4)
-check_comm("P6",  "gpu", 4, 4)
-check_comm("ALL", "gpu", 4, 4)
-pass("community distinct users/groups match the overlapping fixture per M:/P3/P6/ALL window key, for both pools")
+# CPU: its own month list is the full 7, so nothing is ever reduced --
+# every window kind is a genuinely different count (2 / 6 / 12 / 14).
+for (m in months7) check_comm(paste0("M:", m), "cpu", 2, 2)
+check_comm("P3",  "cpu", 6, 6)    # prev3..prev1
+check_comm("P6",  "cpu", 12, 12)  # prev6..prev1
+check_comm("ALL", "cpu", 14, 14)  # prev7..prev1
+# GPU: its own month list excludes prev7/prev6, so those two M: keys are
+# 0/0 even though the internal emit has rows for them; P6 (raw prev6..prev1)
+# and ALL (raw prev7..prev1) both collapse to GPU's own 5-month range.
+check_comm(paste0("M:", prev7), "gpu", 0, 0)
+check_comm(paste0("M:", prev6), "gpu", 0, 0)
+for (m in months5_gpu) check_comm(paste0("M:", m), "gpu", 2, 2)
+check_comm("P3",  "gpu", 6, 6)    # prev3..prev1 (already inside GPU's own range)
+check_comm("P6",  "gpu", 10, 10)  # reduced from raw prev6..prev1 to GPU's own prev5..prev1
+check_comm("ALL", "gpu", 10, 10)  # RULING: intersected with GPU's own months -- equals P6 here
+pass("community counts intersect the window with each pool's OWN published months (7-month, unequal-per-pool fixture): CPU's four window kinds all differ; GPU's prev7/prev6 M: keys are 0/0 and its P6==ALL, exactly as ruled")
 
-# no fixture user code or project name may leak into the emitted JSON text
+# no fixture user code or project name may leak into the emitted JSON text,
+# including the GPU codes for prev7/prev6 that never counted toward anything
 raw7 <- paste(readLines(file.path(f7$fx, "output", "cluster_data.json"), warn = FALSE), collapse = "\n")
-leaked <- c("u-1001","u-1002","u-1003","u-1004","alpha","beta","gamma","delta",
-            "u-2001","u-2002","u-2003","u-2004","g-one","g-two","g-three","g-four")
+leaked <- c(paste0("cpu-u", 1:7, "a"), paste0("cpu-u", 1:7, "b"),
+            paste0("cpu-p", 1:7, "a"), paste0("cpu-p", 1:7, "b"),
+            paste0("gpu-u", 1:7, "a"), paste0("gpu-u", 1:7, "b"),
+            paste0("gpu-p", 1:7, "a"), paste0("gpu-p", 1:7, "b"))
 stopifnot("no fixture user code or project name may appear in the emitted JSON text" =
             !any(vapply(leaked, function(s) grepl(s, raw7, fixed = TRUE), logical(1))))
 pass("no fixture user code or project name leaks into the emitted cluster_data.json text")
@@ -523,37 +548,39 @@ pass("capacity_monthly cap_h prorates mid-month install/retire dates by days; un
 # =====================================================================
 # 9) capacity.{cpu,gpu}.added_12m: nominal units (cores/gpus, not rows)
 #    installed within the 12 months ending on the run date, excluding
-#    retired units and units installed further back.
+#    retired units and units installed further back. A unit installed
+#    EXACTLY 12 months before today must count (inclusive lower bound).
 # =====================================================================
 today       <- Sys.Date()
 recent_in   <- format(today - 30,  "%Y-%m-%d")   # inside the 12mo window
 recent_far  <- format(today - 400, "%Y-%m-%d")   # outside the 12mo window
 recent_retd <- format(today - 60,  "%Y-%m-%d")   # inside the window but retired
 retired_on  <- format(today - 10,  "%Y-%m-%d")
+boundary_12 <- format(seq(today, by = "-12 months", length.out = 2)[2], "%Y-%m-%d")   # exactly 12mo ago
 added12_cpu_inv <- data.frame(
-  host = c("in-window","out-window","retired-in-window"),
-  server_model = rep("ModelX", 3), cpu_type = rep("TypeA", 3),
-  ncpu = c(10, 999, 999), mem_gb = rep(100, 3),
-  install_date = c(recent_in, recent_far, recent_retd),
-  retired      = c("",        "",         retired_on),
+  host = c("in-window","out-window","retired-in-window","boundary-12mo"),
+  server_model = rep("ModelX", 4), cpu_type = rep("TypeA", 4),
+  ncpu = c(10, 999, 999, 7), mem_gb = rep(100, 4),
+  install_date = c(recent_in, recent_far, recent_retd, boundary_12),
+  retired      = c("",        "",         retired_on,  ""),
   stringsAsFactors = FALSE
 )
 added12_gpu_inv <- data.frame(
-  host = c("in-window","out-window","retired-in-window"),
-  server_model = rep("GModelX", 3), cpu_type = rep("TypeA", 3),
-  gpu_type = rep("H200", 3), gpus = c(6, 888, 888), gpu_mem_gb = rep(80, 3),
-  install_date = c(recent_in, recent_far, recent_retd),
-  retired      = c("",        "",         retired_on),
+  host = c("in-window","out-window","retired-in-window","boundary-12mo"),
+  server_model = rep("GModelX", 4), cpu_type = rep("TypeA", 4),
+  gpu_type = rep("H200", 4), gpus = c(6, 888, 888, 2), gpu_mem_gb = rep(80, 4),
+  install_date = c(recent_in, recent_far, recent_retd, boundary_12),
+  retired      = c("",        "",         retired_on,  ""),
   stringsAsFactors = FALSE
 )
 f9 <- make_fixture(cpu_inv_in = added12_cpu_inv, gpu_inv_in = added12_gpu_inv)
 r9 <- run_script(f9)
 stopifnot("added_12m fixture run must exit 0" = r9$status == 0)
 out9 <- fromJSON(file.path(f9$fx, "output", "cluster_data.json"), simplifyVector = TRUE, simplifyMatrix = TRUE)
-stopifnot("capacity.cpu.added_12m must count only the non-retired unit installed within 12 months (10 cores)" =
-            !is.null(out9$capacity$cpu$added_12m) && as.integer(out9$capacity$cpu$added_12m) == 10)
-stopifnot("capacity.gpu.added_12m must count only the non-retired unit installed within 12 months (6 gpus)" =
-            !is.null(out9$capacity$gpu$added_12m) && as.integer(out9$capacity$gpu$added_12m) == 6)
+stopifnot("capacity.cpu.added_12m must count the in-window unit (10) plus the exactly-12-months-ago unit (7) = 17 cores" =
+            !is.null(out9$capacity$cpu$added_12m) && as.integer(out9$capacity$cpu$added_12m) == 17)
+stopifnot("capacity.gpu.added_12m must count the in-window unit (6) plus the exactly-12-months-ago unit (2) = 8 gpus" =
+            !is.null(out9$capacity$gpu$added_12m) && as.integer(out9$capacity$gpu$added_12m) == 8)
 pass("capacity.{cpu,gpu}.added_12m counts nominal units installed within the past 12 months, excluding retired and older units")
 
 # =====================================================================

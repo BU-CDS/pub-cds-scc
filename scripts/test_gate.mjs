@@ -17,7 +17,7 @@
 // user codes / project names to test that check.
 //
 // Run: module load nodejs/20.12.2 && node scripts/test_gate.mjs
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -60,8 +60,25 @@ writeFileSync(join(gpuDir, 'output', 'portal_data.json'), JSON.stringify({
   Fcols: FCOLS_INTERNAL,
   F: [
     ['M', '2026-06', 'fixture-proj-b', 'u-9002', '1'],
+    ['M', '2026-07', 'fixture&corp', 'u-9005', '1'],   // literal "&" for the entity-decode leak test
   ],
 }));
+
+// ---- a second clone pair whose internal emits both have F: [] (empty leak-check
+// blocklist), reusing the same config CSVs as the main pair above -- for the
+// "leak check itself is unusable" test. ----
+const emptyDir = mkdtempSync(join(tmpdir(), 'gate-cluster-empty-'));
+const emptyCpuDir = join(emptyDir, 'cpu-clone'); const emptyGpuDir = join(emptyDir, 'gpu-clone');
+mkdirSync(join(emptyCpuDir, 'config'), { recursive: true });
+mkdirSync(join(emptyGpuDir, 'config'), { recursive: true });
+mkdirSync(join(emptyCpuDir, 'output'), { recursive: true });
+mkdirSync(join(emptyGpuDir, 'output'), { recursive: true });
+writeFileSync(join(emptyCpuDir, 'config', 'cds_cpu_inventory.csv'), readFileSync(join(cpuDir, 'config', 'cds_cpu_inventory.csv')));
+writeFileSync(join(emptyCpuDir, 'config', 'cds_cpu_hosts.csv'), readFileSync(join(cpuDir, 'config', 'cds_cpu_hosts.csv')));
+writeFileSync(join(emptyGpuDir, 'config', 'gpu_inventory_history.csv'), readFileSync(join(gpuDir, 'config', 'gpu_inventory_history.csv')));
+writeFileSync(join(emptyGpuDir, 'config', 'cds_gpu_hosts.csv'), readFileSync(join(gpuDir, 'config', 'cds_gpu_hosts.csv')));
+writeFileSync(join(emptyCpuDir, 'output', 'portal_data.json'), JSON.stringify({ Fcols: FCOLS_INTERNAL, F: [] }));
+writeFileSync(join(emptyGpuDir, 'output', 'portal_data.json'), JSON.stringify({ Fcols: FCOLS_INTERNAL, F: [] }));
 
 // ---- a clean cluster_data.json fixture, shaped like the real contract v3 output --
 // cpu_monthly row: [month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h]
@@ -105,13 +122,16 @@ const goodData = {
 };
 
 const write = (name, obj) => { const p = join(dir, name); writeFileSync(p, JSON.stringify(obj)); return p; };
-const run = (dataObj, html) => {
+// runWith: full {status, stderr} so a test can isolate WHICH check fired (by
+// message text), not just that the gate failed for some reason or other.
+const runWith = (dataObj, html, cpuD = cpuDir, gpuD = gpuDir) => {
   const args = [GATE, write('cluster_data.json', dataObj)];
   if (html !== undefined) { writeFileSync(join(dir, 'page.html'), html); args.push(join(dir, 'page.html')); }
-  const env = { ...process.env, PUB_CPU_CLONE: cpuDir, PUB_GPU_CLONE: gpuDir };
-  try { execFileSync('node', args, { env }); return 0; }
-  catch (e) { return e.status; }
+  const env = { ...process.env, PUB_CPU_CLONE: cpuD, PUB_GPU_CLONE: gpuD };
+  try { execFileSync('node', args, { env }); return { status: 0, stderr: '' }; }
+  catch (e) { return { status: e.status, stderr: (e.stderr ?? Buffer.from('')).toString() }; }
 };
+const run = (dataObj, html) => runWith(dataObj, html).status;
 const clone = o => JSON.parse(JSON.stringify(o));
 const assert = (cond, msg) => { if (!cond) { console.error('FAIL: ' + msg); process.exit(1); } };
 const pass = (msg) => console.log('PASS: ' + msg);
@@ -239,21 +259,88 @@ assert(run(bad) === 1, 'meta.contract != 3 fails'); pass('meta.contract must be 
 // ---- contract v3: leak check reads both internal emits' user codes/project names --
 // (not the generic u-\d+/scc-.* patterns above -- these target the NEW,
 // emit-driven check specifically, including a project name, which has no
-// generic pattern of its own)
-assert(run(goodData, '<html>usage reported for fixture-proj-a this quarter</html>') === 1,
-  'fixture project name (from CPU internal emit) leaking into html fails');
-pass('fixture project name (CPU internal emit) leaking into html fails');
+// generic pattern of its own). Isolated from the pre-existing checks above by
+// asserting on the stderr CATEGORY text ("leaked project name" / "leaked user
+// code"), not just the exit code -- several of these values would also trip
+// the generic u-\d+ pattern, so exit-code-1 alone wouldn't prove this check
+// (rather than an old one) actually fired.
+{
+  const r = runWith(goodData, '<html>usage reported for fixture-proj-a this quarter</html>');
+  assert(r.status === 1, 'fixture project name (CPU internal emit) leaking into html fails');
+  assert(r.stderr.includes('leaked project name'), 'failure names the project-name category');
+  assert(!r.stderr.includes('fixture-proj-a'), 'stderr never echoes the leaked value itself');
+  pass('fixture project name (CPU internal emit) leaking into html fails, isolated by category text');
+}
 
-assert(run(goodData, '<html>heaviest user was fixture-proj-b</html>') === 1,
-  'fixture project name (from GPU internal emit) leaking into html fails');
-pass('fixture project name (GPU internal emit) leaking into html fails');
+{
+  const r = runWith(goodData, '<html>heaviest user was fixture-proj-b</html>');
+  assert(r.status === 1, 'fixture project name (GPU internal emit) leaking into html fails');
+  assert(r.stderr.includes('leaked project name'), 'failure names the project-name category');
+  pass('fixture project name (GPU internal emit) leaking into html fails, isolated by category text');
+}
 
 bad = clone(goodData); bad.capacity.cpu.types[0][0] = 'fixture-proj-a';   // leaks into the JSON itself, not html
-assert(run(bad) === 1, 'fixture project name leaking into cluster_data.json fails'); pass('fixture project name leaking into cluster_data.json fails');
+{
+  const r = runWith(bad);
+  assert(r.status === 1, 'fixture project name leaking into cluster_data.json fails');
+  assert(r.stderr.includes('leaked project name'), 'failure names the project-name category');
+  pass('fixture project name leaking into cluster_data.json fails, isolated by category text');
+}
 
-assert(run(goodData, '<html>owned by u-9001</html>') === 1,
-  'fixture user code (from an internal emit) leaking into html fails');
-pass('fixture user code (CPU internal emit) leaking into html fails');
+{
+  // "owned by u-9001" also trips the pre-existing generic u-\d+ registry-code
+  // pattern -- the category-text assertion is what proves the emit-driven
+  // check independently caught it too, not just the old generic one.
+  const r = runWith(goodData, '<html>owned by u-9001</html>');
+  assert(r.status === 1, 'fixture user code (CPU internal emit) leaking into html fails');
+  assert(r.stderr.includes('leaked user code'), 'failure names the user-code category');
+  pass('fixture user code (CPU internal emit) leaking into html fails, isolated by category text');
+}
+
+// leak hit carries a short, non-revealing local reference (first 6 hex chars
+// of sha1) so an operator can grep their own copy of the internal emits --
+// never the value itself.
+{
+  const r = runWith(goodData, '<html>heaviest user was fixture-proj-b</html>');
+  assert(/ref [0-9a-f]{6}\)/.test(r.stderr), 'leak failure carries a 6-hex-char sha1 reference');
+  assert(!r.stderr.includes('fixture-proj-b'), 'stderr never echoes the leaked project name itself');
+  pass('leak failure message carries a hash reference, never the raw value');
+}
+
+// entity-decoded scan: a fixture project name containing "&", present in the
+// page ONLY in its HTML-escaped form (&amp;), must still be caught.
+{
+  const r = runWith(goodData, '<html>usage reported for fixture&amp;corp this quarter</html>');
+  assert(r.status === 1, 'entity-escaped fixture project name (&amp;) in html fails');
+  assert(r.stderr.includes('leaked project name'), 'entity-decoded leak reports the project-name category');
+  pass('a fixture project name containing "&", present in the page only as "&amp;", fails via entity-decoded scan');
+}
+
+// leak-check blocklist itself must never come back empty -- that means the
+// check is unusable (e.g. an internal emit with F: []), not "nothing to leak".
+{
+  const r = runWith(goodData, undefined, emptyCpuDir, emptyGpuDir);
+  assert(r.status === 1, 'internal emit with F: [] (empty leak-check blocklist) fails closed');
+  assert(r.stderr.includes('leak-check blocklist empty'), 'failure names the empty-blocklist reason');
+  pass('internal emit with F: [] fails closed (empty leak-check blocklist), not a silent no-op');
+}
+
+// ---- contract v3: completeness (every window key/pool or month/pool pair
+// present exactly once) -- distinct from the vocab/monotone checks above,
+// which pass silently on a missing row rather than an invalid one ----
+bad = clone(goodData); bad.community = [];
+assert(run(bad) === 1, 'empty community table fails'); pass('empty community table fails (missing every window key x pool row)');
+
+bad = clone(goodData); bad.capacity_monthly = [];
+assert(run(bad) === 1, 'empty capacity_monthly table fails'); pass('empty capacity_monthly table fails (missing every month x pool row)');
+
+bad = clone(goodData); bad.community = bad.community.filter((r) => r[0] !== 'P6');
+{
+  const r = runWith(bad);
+  assert(r.status === 1, 'community missing every P6 row (both pools) fails');
+  assert(/expected exactly 1 row for window P6/.test(r.stderr), 'failure names the missing P6 rows specifically');
+  pass('community missing every P6 row fails via completeness, even though it silently severs the P3<=P6<=ALL chain');
+}
 
 // fail-closed on unreadable json input
 {

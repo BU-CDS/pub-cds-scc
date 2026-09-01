@@ -16,20 +16,30 @@ All notable changes to the public cluster page.
   months", "All months"), per pool; `capacity_monthly` -- nominal
   capacity-hours per month (cores for the CPU pool, GPUs for the GPU pool),
   prorated by each hardware unit's install/retirement date. Also adds
-  `added_12m` per pool -- nominal units installed in the past 12 months,
-  not retired. No researcher code or group name reaches any output field,
-  only distinct counts. The gate learns the new tables' vocabulary and
-  monotonicity (Past 3 <= Past 6 <= All, any single month <= All,
-  capacity-hours > 0, additions never exceeding the pool total) and now
-  also reads every researcher code and group name out of both internal
-  emits at gate time, scanning `cluster_data.json` and the built page for a
-  leak (never echoing the value if one is found). Fixture-tested
-  (`test_cluster_data.R`: 29 assertions; `test_gate.mjs`: 42 assertions)
-  and verified against the real emits: Past 3 months (May-Jul 2026) shows
-  120 researchers / 63 groups on the CPU pool and 84 researchers / 36
-  groups on the GPU pool; reserved share of nominal capacity over that
-  window is ~34% (CPU) / ~55% (GPU); 12 GPUs and 0 CPU nodes were added in
-  the past 12 months.
+  `added_12m` per pool -- nominal units installed in the 12 months up to
+  and including the run date, not retired. No researcher code or group
+  name reaches any output field, only distinct counts. A period's
+  researcher/group count is always the requested period intersected with
+  that SAME pool's own published months, so every tile on a card covers
+  the same span as its pool's other numbers (a period with no overlap for
+  a pool reads zero, not an error) -- the coverage caption already
+  discloses when a pool's data doesn't reach as far back as the period
+  nominally suggests.
+  The gate learns the new tables' vocabulary, requires every period/pool
+  and month/pool combination to appear exactly once, and checks
+  monotonicity directly across every pair (Past 3 <= Past 6, Past 6 <=
+  All, and Past 3 <= All, plus any single month <= All), capacity-hours
+  greater than zero, and additions never exceeding the pool total. It also
+  reads every researcher code and group name out of both internal emits at
+  gate time -- refusing to publish outright if that read comes back empty,
+  since an empty check is a broken check, not "nothing to leak" -- and
+  scans `cluster_data.json` and the built page, entity-decoded as well as
+  raw, for a leak (an escaped `&amp;` can't hide a code containing `&`);
+  a leak failure names the category and a short non-reversible local
+  reference, never the value itself.
+  Fixture-tested (`test_cluster_data.R`: 29 assertions; `test_gate.mjs`:
+  48 assertions) and verified end-to-end against the real emits, gate
+  included.
 
 - **CPU panel: memory shown as a column, not a tooltip line**
   (2026-08-31, `build_cluster_page.R`, `scripts/test_page.mjs`): the CPU

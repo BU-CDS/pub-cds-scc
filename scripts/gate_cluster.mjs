@@ -6,14 +6,19 @@
 // cards, node classes, YYYY-MM periods) and the blocklist scans the full text
 // for real hostnames and registry codes regardless of where they land.
 //
-// Contract v3 (2026-09-01) adds: `community` (window_key/pool vocab, monotone
-// P3<=P6<=ALL and every M:<=ALL per pool/metric), `capacity_monthly` (month
-// whitelisted against that pool's own published month list, cap_h > 0),
+// Contract v3 (2026-09-01) adds: `community` (window_key/pool vocab, every
+// key x pool pair present exactly once, monotone P3<=P6<=ALL checked as
+// direct pairs and every M:<=ALL per pool/metric), `capacity_monthly` (month
+// whitelisted against that pool's own published month list, cap_h > 0,
+// exactly one row per pool per month of that pool's monthly table),
 // `capacity.*.added_12m` (non-negative integer, <= that pool's total units),
 // meta.contract === 3. The blocklist scan additionally reads every user code
 // and project name out of BOTH internal de-identified emits (CPU's and the
-// NEW GPU one) at gate time and asserts none occurs anywhere in the scanned
-// text -- failure names the category (user code / project), never the value.
+// NEW GPU one) at gate time -- failing closed if either list comes back empty
+// (an unusable leak check, not "nothing to leak") -- and asserts none occurs,
+// raw or HTML-entity-decoded, anywhere in the scanned text; failure names the
+// category (user code / project) plus a short local sha1 reference, never the
+// value itself.
 //
 // Usage: node gate_cluster.mjs <cluster_data.json> [built_html]
 //   - called before build with just the json (data-layer gate)
@@ -23,6 +28,7 @@
 // / PUB_GPU_CLONE vars 50_cluster_data.R reads).
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const [dataPath, htmlPath] = process.argv.slice(2);
 if (!dataPath) {
@@ -88,6 +94,11 @@ const cpuCodes = readInternalCodes(join(PUB_CPU_CLONE, 'output', 'portal_data.js
 const gpuCodes = readInternalCodes(join(PUB_GPU_CLONE, 'output', 'portal_data.json'));
 const LEAK_USER_CODES = [...new Set([...cpuCodes.users, ...gpuCodes.users])];
 const LEAK_PROJECT_NAMES = [...new Set([...cpuCodes.projects, ...gpuCodes.projects])];
+// An empty blocklist doesn't mean "nothing to leak" -- it means the leak check
+// itself is unusable (e.g. an internal emit with F: [], or an unreadable/malformed
+// one already flagged above). Fail closed rather than silently no-op the check.
+if (!LEAK_USER_CODES.length || !LEAK_PROJECT_NAMES.length)
+  bad('leak-check blocklist empty (internal emit unusable)');
 
 const PERIOD = /^\d{4}-\d{2}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -169,6 +180,7 @@ if (data) {
     'P3', 'P6', 'ALL',
   ]);
   const commByKeyPool = new Map();
+  const commCount = new Map();
   for (const row of data.community || []) {
     if (row.length !== 4) { bad(`community: row length ${row.length} != 4`); continue; }
     const [key, pool, users, groups] = row;
@@ -176,13 +188,25 @@ if (data) {
     if (!POOLS.has(pool)) bad(`community: unknown pool: ${pool}`);
     for (const [fname, v] of [['users', users], ['groups', groups]])
       if (!(Number.isInteger(Number(v)) && Number(v) >= 0)) bad(`community: bad ${fname}: ${v}`);
-    commByKeyPool.set(`${key}|${pool}`, { users: Number(users), groups: Number(groups) });
+    const mapKey = `${key}|${pool}`;
+    commByKeyPool.set(mapKey, { users: Number(users), groups: Number(groups) });
+    commCount.set(mapKey, (commCount.get(mapKey) || 0) + 1);
   }
-  // monotone per pool: P3 <= P6 <= ALL; every M: <= ALL (both metrics)
+  // completeness: every whitelisted window key x pool pair must appear exactly
+  // once -- an empty/partial `community` (or one missing just P6, say) passes
+  // the checks above silently otherwise, and severs the monotone chain below
+  // without a trace.
+  for (const key of COMMUNITY_KEYS) for (const pool of POOLS) {
+    const cnt = commCount.get(`${key}|${pool}`) || 0;
+    if (cnt !== 1) bad(`community: expected exactly 1 row for window ${key} / pool ${pool}, found ${cnt}`);
+  }
+  // monotone per pool: P3 <= P6 <= ALL, checked as three direct pairs (not just
+  // adjacent) so a single broken/missing link can't hide a P3 > ALL violation.
   for (const pool of POOLS) {
     const p3 = commByKeyPool.get(`P3|${pool}`), p6 = commByKeyPool.get(`P6|${pool}`), all = commByKeyPool.get(`ALL|${pool}`);
     if (p3 && p6 && !(p3.users <= p6.users && p3.groups <= p6.groups)) bad(`community: P3 > P6 for pool ${pool}`);
     if (p6 && all && !(p6.users <= all.users && p6.groups <= all.groups)) bad(`community: P6 > ALL for pool ${pool}`);
+    if (p3 && all && !(p3.users <= all.users && p3.groups <= all.groups)) bad(`community: P3 > ALL for pool ${pool}`);
     if (all) {
       for (const [mapKey, v] of commByKeyPool) {
         if (!mapKey.startsWith('M:') || !mapKey.endsWith(`|${pool}`)) continue;
@@ -194,6 +218,7 @@ if (data) {
   // ---- capacity_monthly: [month, pool, cap_h] ----
   // month whitelisted against that pool's OWN published month list (matches
   // cpu_monthly/gpu_monthly's own coverage, not the wider community union).
+  const capMonthlyCount = new Map();
   for (const row of data.capacity_monthly || []) {
     if (row.length !== 3) { bad(`capacity_monthly: row length ${row.length} != 3`); continue; }
     const [m, pool, cap_h] = row;
@@ -202,6 +227,18 @@ if (data) {
     else if (pool === 'cpu' && !monthsCpu.has(m)) bad(`capacity_monthly: period out of meta's cpu month list: ${m}`);
     else if (pool === 'gpu' && !monthsGpu.has(m)) bad(`capacity_monthly: period out of meta's gpu month list: ${m}`);
     if (!(Number.isFinite(Number(cap_h)) && Number(cap_h) > 0)) bad(`capacity_monthly: bad cap_h: ${cap_h}`);
+    capMonthlyCount.set(`${m}|${pool}`, (capMonthlyCount.get(`${m}|${pool}`) || 0) + 1);
+  }
+  // completeness: exactly one capacity_monthly row per pool per month of that
+  // pool's own monthly (hour) table -- an empty/partial capacity_monthly
+  // otherwise passes silently.
+  for (const m of monthsCpu) {
+    const cnt = capMonthlyCount.get(`${m}|cpu`) || 0;
+    if (cnt !== 1) bad(`capacity_monthly: expected exactly 1 row for month ${m} / pool cpu, found ${cnt}`);
+  }
+  for (const m of monthsGpu) {
+    const cnt = capMonthlyCount.get(`${m}|gpu`) || 0;
+    if (cnt !== 1) bad(`capacity_monthly: expected exactly 1 row for month ${m} / pool gpu, found ${cnt}`);
   }
 
   // ---- headline ----
@@ -242,6 +279,30 @@ if (htmlPath) {
   else texts.push(['html', readFileSync(htmlPath, 'utf8')]);
 }
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// single-pass HTML entity decode (named + numeric/hex) so a value present only
+// as e.g. "fixture &amp; co" isn't invisible to the leak scan below. Single
+// pass avoids double-decoding an already-escaped ampersand.
+const ENTITY_MAP = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const decodeEntities = (s) => s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (m, ent) => {
+  if (ent[0] === '#') {
+    const code = (ent[1] === 'x' || ent[1] === 'X') ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+    return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+  }
+  const key = ent.toLowerCase();
+  return key in ENTITY_MAP ? ENTITY_MAP[key] : m;
+});
+// a leak hit never echoes the matched value, but appends a short local
+// reference (first 6 hex chars of its sha1) an operator can grep their own
+// copy of the internal emits for.
+const ref = (s) => createHash('sha1').update(s).digest('hex').slice(0, 6);
+const leakScan = (list, label, category, ...texts2) => {
+  for (const val of list) {
+    if (texts2.some((t) => new RegExp(`\\b${esc(val)}\\b`, 'i').test(t))) {
+      bad(`${label}: leaked ${category} (internal-emit leak check, ref ${ref(val)})`);
+      return;
+    }
+  }
+};
 for (const [label, text] of texts) {
   const uCode = text.match(/\bu-\d+\b/);
   if (uCode) bad(`${label}: registry code pattern found: ${uCode[0]}`);
@@ -249,11 +310,12 @@ for (const [label, text] of texts) {
   if (sccCode) bad(`${label}: scc host pattern found: ${sccCode[0]}`);
   for (const hst of HOSTNAMES)
     if (new RegExp(`\\b${esc(hst)}\\b`, 'i').test(text)) bad(`${label}: real hostname found: ${hst}`);
-  // contract v3: every user code / project name from both internal emits, never echoed
-  if (LEAK_USER_CODES.some((code) => new RegExp(`\\b${esc(code)}\\b`, 'i').test(text)))
-    bad(`${label}: leaked user code (internal-emit leak check)`);
-  if (LEAK_PROJECT_NAMES.some((name) => new RegExp(`\\b${esc(name)}\\b`, 'i').test(text)))
-    bad(`${label}: leaked project name (internal-emit leak check)`);
+  // contract v3: every user code / project name from both internal emits, never
+  // echoed; scans the raw text and an entity-decoded copy so an HTML-escaped
+  // occurrence (e.g. a project name containing "&" rendered as "&amp;") can't hide.
+  const decoded = decodeEntities(text);
+  leakScan(LEAK_USER_CODES, label, 'user code', text, decoded);
+  leakScan(LEAK_PROJECT_NAMES, label, 'project name', text, decoded);
 }
 
 if (errs.length) {

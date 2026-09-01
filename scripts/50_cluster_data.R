@@ -125,11 +125,16 @@ Fg <- numify(tomat(gpu$F, gpu$Fcols), GPU_METRICS)[pt == "M" & p %chin% months_g
 
 # community membership: (p, user, proj) only, from the CPU internal emit (cpu$F,
 # already read above) and the GPU internal de-identified emit (gpu2$F, read ONLY
-# for this). Restricted to all_months so a stray current/unpublished month in
-# either internal emit can never surface a phantom window key. user/proj are read
-# only to be counted distinct below -- never emitted themselves.
-Fm_cpu <- tomat(cpu$F,  cpu$Fcols )[pt == "M" & p %chin% all_months, .(p, user, proj)]
-Fm_gpu <- tomat(gpu2$F, gpu2$Fcols)[pt == "M" & p %chin% all_months, .(p, user, proj)]
+# for this). RULING (2026-09-01): each pool's membership is restricted to that
+# SAME pool's own published month list (months_cpu / months_gpu -- the same
+# months its hour table covers), not the wider all_months union -- so every
+# tile on a card covers the same span (the coverage caption already discloses
+# partial coverage). A window whose months don't overlap that pool's own list
+# at all (e.g. a CPU-only month, for the GPU pool) naturally yields 0 users /
+# 0 groups once intersected below, not a phantom stray-month count. user/proj
+# are read only to be counted distinct below -- never emitted themselves.
+Fm_cpu <- tomat(cpu$F,  cpu$Fcols )[pt == "M" & p %chin% months_cpu, .(p, user, proj)]
+Fm_gpu <- tomat(gpu2$F, gpu2$Fcols)[pt == "M" & p %chin% months_gpu, .(p, user, proj)]
 
 # column order fixed to the spec's contract v2 row shape
 cpu_m <- Fc[, .(held_h     = round(sum(held), 2),
@@ -159,6 +164,10 @@ stopifnot(!any(c("proj", "user", "host", "code", "codename") %in% c(names(cpu_m)
 # "M:YYYY-MM" for each month in all_months, "P3" (=window3), "P6" (trailing
 # <=6 of all_months), "ALL" (all of all_months). Mirrors build_cluster_page.R's
 # windowFor(): past3 -> window3, past6 -> ALLM.slice(-6), all -> ALLM.slice().
+# Each pool's actual month set is this window's months intersected with that
+# pool's own published months (Fm_cpu/Fm_gpu above are already restricted to
+# months_cpu/months_gpu, so `p %chin% ms` below computes that intersection
+# for free); a window with no overlap for a pool yields 0/0, not an error.
 window_months <- function(key) {
   if (startsWith(key, "M:")) return(sub("^M:", "", key))
   if (key == "P3")  return(window3)
@@ -211,7 +220,7 @@ today_d  <- Sys.Date()
 start_12 <- seq(today_d, by = "-12 months", length.out = 2)[2]
 added_12m_units <- function(inv, unit_col) {
   d <- suppressWarnings(as.Date(ifelse(nzchar(inv$install_date), inv$install_date, NA)))
-  keep <- !is.na(d) & inv$retired == "" & d > start_12 & d <= today_d
+  keep <- !is.na(d) & inv$retired == "" & d >= start_12 & d <= today_d
   sum(as.integer(inv[[unit_col]])[keep])
 }
 cpu_added_12m <- as.integer(added_12m_units(cpu_inv_all, "ncpu"))
