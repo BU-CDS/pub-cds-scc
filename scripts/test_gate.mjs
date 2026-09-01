@@ -325,6 +325,20 @@ bad = clone(goodData); bad.capacity.cpu.types[0][0] = 'fixture-proj-a';   // lea
   pass('internal emit with F: [] fails closed (empty leak-check blocklist), not a silent no-op');
 }
 
+// each internal emit must contribute to the blocklist on its own: a single
+// producer shipping F: [] while the other stays healthy would otherwise leave
+// the leak scan half-blind behind a PASS
+{
+  const r = runWith(goodData, undefined, cpuDir, emptyGpuDir);
+  assert(r.status === 1 && r.stderr.includes('leak-check blocklist empty'), 'GPU internal emit alone with F: [] fails closed');
+  pass('GPU internal emit alone with F: [] fails closed');
+}
+{
+  const r = runWith(goodData, undefined, emptyCpuDir, gpuDir);
+  assert(r.status === 1 && r.stderr.includes('leak-check blocklist empty'), 'CPU internal emit alone with F: [] fails closed');
+  pass('CPU internal emit alone with F: [] fails closed');
+}
+
 // ---- contract v3: completeness (every window key/pool or month/pool pair
 // present exactly once) -- distinct from the vocab/monotone checks above,
 // which pass silently on a missing row rather than an invalid one ----

@@ -97,8 +97,10 @@ const LEAK_PROJECT_NAMES = [...new Set([...cpuCodes.projects, ...gpuCodes.projec
 // An empty blocklist doesn't mean "nothing to leak" -- it means the leak check
 // itself is unusable (e.g. an internal emit with F: [], or an unreadable/malformed
 // one already flagged above). Fail closed rather than silently no-op the check.
-if (!LEAK_USER_CODES.length || !LEAK_PROJECT_NAMES.length)
-  bad('leak-check blocklist empty (internal emit unusable)');
+// Checked per source: one healthy emit must not mask the other shipping F: [].
+for (const [src, c] of [['CPU', cpuCodes], ['GPU', gpuCodes]])
+  if (!c.users.length || !c.projects.length)
+    bad(`leak-check blocklist empty for the ${src} internal emit (unusable)`);
 
 const PERIOD = /^\d{4}-\d{2}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
