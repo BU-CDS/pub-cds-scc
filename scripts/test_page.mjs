@@ -1,5 +1,5 @@
 // test_page.mjs — assert the built public page's STRUCTURE, JS-execution safety, and
-// de-id/blocklist policy for the portal-lift design (spec Revision R1): twin pool
+// de-id/blocklist policy for the portal-lift design (design revision of 2026-08-31): twin pool
 // panels (GPU left, CPU right), a segmented [Past 3|6|All months] period bar plus a
 // month-only <select> and a resolved-range text (default: trailing 3 complete
 // months), and per-pool KPI totals cards recomputed by inline JS. The old zero-JS
@@ -41,7 +41,7 @@ const rangeTextJS = (months) => {
 };
 
 // ---- 0. exactly one inline <script>; no external requests / storage / theme machinery ----
-// (the old zero-JS rule is dead per spec Revision R1 -- inline JS is now required, but it
+// (the old zero-JS rule is dead per the 2026-08-31 design revision -- inline JS is now required, but it
 // must stay self-contained: no fetch/XHR, no browser storage, no OS-theme detection.)
 {
   const scriptCount = (html.match(/<script\b/g) || []).length;
@@ -108,7 +108,7 @@ has(head1, 'Faculty of Computing &amp; Data Sciences', 'h1 carries the school na
 // ---- 4. no LIVE/STALE machinery (this is capacity, not a live occupancy feed) ----
 for (const needle of ['livebadge', 'stalebadge', 'livedot', 'LIVE</span>', '>STALE<'])
   not(html, needle, 'no "' + needle + '" (capacity panels carry no live/stale badge)');
-// the footer's stamp wording moves monthly -> quarterly per spec Revision R1
+// the footer's stamp wording moves monthly -> quarterly per the 2026-08-31 design revision
 // (cadence: quarterly); deploy.sh's stamp grep is updated to match -- must
 // still be present, not forbidden.
 has(html, 'updated quarterly', 'footer keeps the "updated quarterly" stamp deploy.sh checks for');
@@ -231,7 +231,7 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
       ? ok('functional: clicking "All months" updates the range text correctly ("' + expectAllRange + '")')
       : bad('functional: range text after "All months" is "' + els['#prange'].textContent + '", expected "' + expectAllRange + '"');
 
-    // I1: GPU's own series (trailing) rarely covers the full union -- "All months"
+    // Coverage: GPU's own series (trailing) rarely covers the full union -- "All months"
     // should caption the GPU card with its actual coverage, while still rendering
     // real (not zeroed-out-looking) tiles; CPU's series covers the union, so its
     // caption stays empty.
@@ -258,7 +258,7 @@ has(gpuCard, (wGpu.held ? Math.round(100 * wGpu.real / wGpu.held) : 0) + '%', 'G
       ? ok('functional: selecting a single month updates the range text correctly ("' + expectMonthRange + '")')
       : bad('functional: range text after a single-month pick is "' + els['#prange'].textContent + '", expected "' + expectMonthRange + '"');
 
-    // I1: a month before GPU's own series began (CPU's earliest month) must
+    // Coverage: a month before GPU's own series began (CPU's earliest month) must
     // replace the GPU tiles with a "no data" message, not render misleading
     // zero-value tiles that read as "the GPU pool did nothing"
     const earlyMonth = data.meta.months_cpu[0];
@@ -287,7 +287,7 @@ const U_CODE = /\bu-\d+\b/, SCC_CODE = /\bscc-[a-z0-9]+\b/i;
 // ---- 9. viewport meta ----
 has(html, '<meta name="viewport"', 'viewport meta present');
 
-// ---- 10. layout-tightening pass (maintainer computed-layout review): fitted
+// ---- 10. layout-tightening pass (computed-layout pass): fitted
 // GPU blocks, narrower label columns, a 3-column CPU node grid, an aligned
 // 4-column KPI grid, deck-titled h3s, and a slim centered period strip ----
 const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];

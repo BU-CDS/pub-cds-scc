@@ -6,7 +6,7 @@
 # stop()-on-bad-input paths are exercised for real, exit code and all),
 # and checks the emitted output/cluster_data.json.
 #
-# Contract v2 (spec Revision R1): cpu_monthly rows widen to
+# Contract v2 (design revision of 2026-08-31): cpu_monthly rows widen to
 # [month,node_class,held_h,utilized_h,fail_h,wkill_h,njobs,wa_used_h,wa_req_h];
 # gpu_monthly rows widen to
 # [month,card,held_h,real_h,residle_h,kwh,vram_h,fail_h,wkill_h,njobs];

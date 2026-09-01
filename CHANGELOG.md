@@ -77,11 +77,7 @@ All notable changes to the public cluster page.
   JS `toLocaleString()` calls are pinned to `'en-US'` so a period-change
   recompute can't re-render a number in a different grouping style than the
   server-rendered default on a non-English browser. `<select id="pmonth">`
-  gains `aria-label="Month"` (it carried no accessible name). And every
-  internal-process reference ("Task N", "maintainer round N") is reworded to
-  describe what changed, never the process that produced it, across
-  `CHANGELOG.md`, `build_cluster_page.R`, `refresh_public.sh`,
-  `scripts/test_page.mjs`, `scripts/test_deploy.sh`, and `scripts/test_gate.mjs`.
+  gains `aria-label="Month"` (it carried no accessible name).
   Text-and-comment changes only; the full test suite (page 157/157, data
   layer 17/17, gate 24/24, `validate.mjs`, `test_deploy.sh` 12/12) is
   unaffected.
@@ -187,7 +183,7 @@ All notable changes to the public cluster page.
   real strip+combine output (exit 0).
 
 - **Public page: portal-lift rebuild** (2026-08-31, `build_cluster_page.R`,
-  `scripts/test_page.mjs`, `validate.mjs`; spec Revision R1): replaces the static
+  `scripts/test_page.mjs`, `validate.mjs`): replaces the static
   zero-JS showcase with a lift of the two portals' own hardware/status panels --
   the old zero-JS rule is dead, this page ships exactly one inline `<script>`,
   self-contained (no `fetch`/`XMLHttpRequest`, no `localStorage`, no
@@ -220,7 +216,7 @@ All notable changes to the public cluster page.
 
 - **Ops: quarterly cadence + deploy guard for the scripted page** (2026-08-31,
   `deploy.sh`, `scripts/test_deploy.sh`, `build_cluster_page.R`,
-  `scripts/test_page.mjs`; spec Revision R1): the footer stamp moves
+  `scripts/test_page.mjs`): the footer stamp moves
   `updated monthly` -> `updated quarterly` to match the new quarterly refresh
   cadence, and `deploy.sh`'s zero-JS guard -- dead now that the page carries a
   real inline `<script>` -- is replaced with a guard that admits

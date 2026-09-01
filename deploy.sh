@@ -11,7 +11,7 @@ REPO="$(git -C "$ROOT" rev-parse --show-toplevel)"
 PAGE="$ROOT/index.html"
 [ -f "$PAGE" ] || { echo "deploy: no index.html to publish"; exit 1; }
 
-# script guard: the zero-JS rule is dead (spec Revision R1) -- the page now
+# script guard: the zero-JS rule is dead (design revision of 2026-08-31) -- the page now
 # legitimately ships one inline <script> for period switching + KPI recompute.
 # What is still refused, unconditionally (no env var bypasses it): anything
 # that would make the script reach outside the page -- an external request,

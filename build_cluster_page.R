@@ -1,6 +1,6 @@
 # =====================================================================
 # build_cluster_page.R — the public showcase: a portal-lift of the two pool
-# builders' own hardware/status panels (spec Revision R1, 2026-08-31). Twin
+# builders' own hardware/status panels (design revision of 2026-08-31). Twin
 # pool panels (GPU left, CPU right) render pure CAPACITY -- every square/
 # block fully saturated, no live occupancy, no LIVE/STALE badge -- plus a
 # month-grain period selector and per-pool KPI totals cards recomputed by

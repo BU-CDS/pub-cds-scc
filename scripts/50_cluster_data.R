@@ -58,7 +58,7 @@ months_gpu <- setdiff(gpu$periods$M, cur)
 stopifnot(length(months_cpu) >= 1, length(months_gpu) >= 1)
 window3 <- tail(sort(intersect(months_cpu, months_gpu)), 3)   # trailing (<=3) months common to both, for the headline
 
-# C1 guard: window3 must end at the calendar month just closed (America/New_York),
+# Guard: window3 must end at the calendar month just closed (America/New_York),
 # not merely "whatever the two emits happen to agree on". Without this, an input
 # that stops advancing on one side (e.g. a dropped producer cron) silently ages
 # the published "Past 3 months" by a month every run until a freshness ceiling
