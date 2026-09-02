@@ -23,7 +23,7 @@
 #   $PUB_CPU_CLONE/assets/faculty_compt_data_sci_signature_toptier_rgb.png
 #   $PUB_CPU_CLONE/assets/WhitneySSmAdvancedSemibold.woff2   (weight 600)
 #   $PUB_CPU_CLONE/assets/WhitneySSmAdvancedBook.woff2       (weight 400)
-#   (+ BU's public favicon.ico, held below as a base64 constant, not a file)
+#   $PUB_CPU_CLONE/assets/favicon.ico                         (BU's favicon, 16x16 ICO)
 # Writes: index.html (repo root, gitignored)
 # Run: module load R/4.5.2 && Rscript build_cluster_page.R
 # =====================================================================
@@ -49,11 +49,7 @@ plate_uri     <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "
 emblem_uri    <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "faculty_compt_data_sci_signature_toptier_rgb.png")))
 font_uri      <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedSemibold.woff2")))
 font_uri_book <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedBook.woff2")))
-# BU's favicon.ico -- https://www.bu.edu/favicon.ico, the 16x16 ICO every bu.edu page serves (318 bytes,
-# fetched 2026-09-02) -- inline, so the browser never asks GitHub Pages for a /favicon.ico the page branch
-# does not carry (a 404 on every load). A public brand asset, so it lives here as text rather than in the
-# sibling clone's assets/, which this repo never writes to.
-favicon_uri <- "data:image/x-icon;base64,AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAERHPAGBg3wBmZuAAoKDsALW18ADu7vwA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAd3d3d3d3d3d3d3d3d3d3dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABXdzA3dzAAAAcwcXQDcAAABzBwcgBwAAAHdjByAHAAAAcwcHIAcAAAV3c1dQV1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHd3d3d3d3d3d3d3d3d3d3cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+favicon_uri   <- paste0("data:image/x-icon;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "favicon.ico")))   # BU's own favicon (www.bu.edu/favicon.ico: 16x16 ICO, 318 bytes), declared inline so no load asks GitHub Pages for a /favicon.ico the page branch does not carry
 
 # ---- helpers ----------------------------------------------------------------
 jround <- function(x) floor(as.numeric(x) + 0.5)   # JS Math.round semantics (round-half-up, x >= 0) so R's server-render and the page's own JS agree bit-for-bit

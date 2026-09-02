@@ -9,12 +9,13 @@ All notable changes to the public cluster page.
   the 16×16 ICO every bu.edu page serves, inline as a data URI and byte for
   byte the file www.bu.edu serves. The page declared none before, so every load
   asked GitHub Pages for `/favicon.ico`, which the `page` branch does not carry,
-  and logged a 404 in the browser console. The icon is a public brand asset of
-  318 bytes, so it lives in the builder as a base64 constant rather than in the
-  sibling clone's `assets/`, which this repo never writes to. The page test pins
-  the head to exactly one `rel="icon"` link, to those bytes, sitting after the
-  title and ahead of the Google tag. Gate, validator and deploy guard pass
-  unchanged.
+  and logged a 404 in the browser console. The file is `assets/favicon.ico` in
+  the CPU clone (318 bytes), read at build time like the plate, emblem and
+  fonts; the build fails closed without it. The page test pins the head to
+  exactly one `rel="icon"` link, to those bytes, sitting after the title and
+  ahead of the Google tag, and proves the fail-closed read with a rebuild
+  against an `assets/` copy that lacks the icon. Gate, validator and deploy
+  guard pass unchanged.
 
 ## 2026-09-02 — published (cluster.cds.bu.edu)
 

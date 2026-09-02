@@ -1043,5 +1043,26 @@ not(html, 'prefers-color-scheme', 'still no theme machinery');
   (at > head.indexOf('</title>') && at < head.indexOf('googletagmanager.com/gtag/js')) ? ok('the icon link sits after the title and ahead of the Google tag') : bad('the icon link is not between the title and the Google tag');
 }
 
+// ---- the favicon is read from the CPU clone's assets/ at build time like every other
+// embedded asset, and the build fails closed without it: no fallback, no empty href ----
+{
+  const PUB_CPU_CLONE = process.env.PUB_CPU_CLONE || '/usr3/bustaff/mhorn/repos/cpu-cds-scc';
+  const tmp = mkdtempSync(join(tmpdir(), 'cluster-page-noicon-'));
+  try {
+    writeFileSync(join(tmp, 'build_cluster_page.R'), readFileSync(join(SDIR, '..', 'build_cluster_page.R'), 'utf8'));
+    mkdirSync(join(tmp, 'output'), { recursive: true });
+    writeFileSync(join(tmp, 'output', 'cluster_data.json'), JSON.stringify(data));
+    mkdirSync(join(tmp, 'cpu', 'assets'), { recursive: true });
+    for (const a of ['bu_plate_white.png', 'faculty_compt_data_sci_signature_toptier_rgb.png', 'WhitneySSmAdvancedSemibold.woff2', 'WhitneySSmAdvancedBook.woff2'])
+      writeFileSync(join(tmp, 'cpu', 'assets', a), readFileSync(join(PUB_CPU_CLONE, 'assets', a)));   // every asset but favicon.ico
+    let err = '';
+    try { execFileSync('Rscript', [join(tmp, 'build_cluster_page.R')], { stdio: 'pipe', env: { ...process.env, PUB_CPU_CLONE: join(tmp, 'cpu') } }); }
+    catch (e) { err = String(e.stderr || e.message); }
+    (err.includes('missing asset') && err.includes('favicon.ico'))
+      ? ok('fixture (assets/ without favicon.ico): the build fails closed naming the missing icon')
+      : bad('fixture (assets/ without favicon.ico): the build did not fail on the missing icon' + (err ? ' -- stderr: ' + err.slice(0, 120) : ' (it succeeded)'));
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
