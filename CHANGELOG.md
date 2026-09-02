@@ -2,7 +2,7 @@
 
 All notable changes to the public cluster page.
 
-## 2026-09-02 — unpublished
+## 2026-09-02 — published (cluster.cds.bu.edu)
 
 - **Page: explorer links in the header** (2026-09-02, `build_cluster_page.R`,
   `scripts/test_page.mjs`, `README.md`): a utilities cluster pinned top-right
