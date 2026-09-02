@@ -408,6 +408,7 @@ r"-----(") format("woff2");}
 *{box-sizing:border-box}html{font-size:110%;}html,body{height:100%;}body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;font-family:var(--t-sans);color:var(--text);margin:0;background:var(--bg);font-size:0.813rem;line-height:1.45;-webkit-font-smoothing:antialiased;}
 header{background:var(--headbg);color:var(--headfg);padding:12px var(--content-pad);position:relative;border-top:3px solid #cc0000;border-bottom:1px solid rgba(255,255,255,.08);}header h1{font-size:1rem;margin:0;font-weight:600;letter-spacing:-.01em;font-family:"Whitney SSm A",var(--t-sans);}.buplate{height:1.615em;vertical-align:-.449em;margin-right:.34em;}.orgname{font-weight:400;letter-spacing:0;}.hsep{color:rgba(255,255,255,.4);font-weight:400;padding:0 .6em;}
 .hwrap{max-width:min(var(--content-max),98vw);margin:0 auto;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;}
+.hutils{position:absolute;top:10px;right:18px;display:flex;gap:8px;z-index:2;align-items:center;}.hcap{font-size:0.688rem;color:var(--headfg);opacity:.72;margin-right:2px;}.hbtn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:var(--headfg);font:inherit;font-size:0.688rem;padding:3px 10px;border-radius:5px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;}.hbtn:hover{background:rgba(255,255,255,.2);}.gpuword{color:#baf72e;}.cpuword{color:#4cc9db;}.hbtn .gpuword,.hbtn .cpuword{margin-right:.28em;}@media(max-width:1000px){.hutils{position:static;justify-content:flex-end;margin-top:8px;}}
 main{max-width:min(var(--content-max),98vw);width:100%;margin:0 auto;padding:14px var(--content-pad) 60px;flex:1 0 auto;}
 h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 .deck{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px;margin-bottom:12px;box-shadow:0 1px 3px var(--shadow);}
@@ -479,7 +480,7 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 </style></head><body>
 <header><div class="hwrap"><h1><img class="buplate" src=")-----",
 plate_uri,
-r"-----(" alt="Boston University"><span class="orgname">Faculty of Computing &amp; Data Sciences</span><span class="hsep">|</span>Research Computing at CDS</h1></div></header>
+r"-----(" alt="Boston University"><span class="orgname">Faculty of Computing &amp; Data Sciences</span><span class="hsep">|</span>Research Computing at CDS</h1></div><div class="hutils"><span class="hcap">Members</span><a class="hbtn" href="https://gpu.cds.bu.edu" title="CDS members: sign-in required"><span class="gpuword">GPU</span> Explorer</a><a class="hbtn" href="https://cpu.cds.bu.edu" title="CDS members: sign-in required"><span class="cpuword">CPU</span> Explorer</a></div></header>
 <main>
 <div class="livewrap"><span class="liveupd"><a href="https://rcs.bu.edu" target="_blank" rel="noopener">Data from BU SCC</a> · updated quarterly · )-----",
 d$meta$updated,

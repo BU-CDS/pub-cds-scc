@@ -982,5 +982,42 @@ not(html, 'prefers-color-scheme', 'still no theme machinery');
   } catch (e) { bad('fixture (GPU weekly max forced to 12,000) rebuild failed: ' + (e && e.message ? e.message : e)); }
 }
 
+// ---- 23. Explorer links: a header utilities cluster in the pool explorers' own
+// .hutils/.hbtn pill design, pinned top-right: a muted "Members" caption, then GPU
+// Explorer and CPU Explorer in the panels' left-to-right order. The explorers are
+// org-restricted (an anonymous visitor is redirected to sign-in), hence the caption
+// and a tooltip. Same-tab navigation, as the explorers' own cross-links. Below
+// 1000px the cluster unpins and sits right-aligned under the lockup: this page's
+// lockup is longer than the explorers', and the pinned pills collide with it at
+// ~820px. ----
+{
+  const headerBlock = (html.match(/<header>([\s\S]*?)<\/header>/) || ['', ''])[1];
+  const hutils = (headerBlock.match(/<div class="hutils">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  hutils ? ok('header carries a .hutils utilities cluster') : bad('no <div class="hutils"> inside <header>');
+  (headerBlock.indexOf('<div class="hutils">') > headerBlock.indexOf('</h1>'))
+    ? ok('.hutils follows the h1 lockup in the markup (so the unpinned narrow layout flows under it)')
+    : bad('.hutils does not follow the h1 lockup');
+  has(hutils, '<span class="hcap">Members</span>', 'a muted "Members" caption opens the cluster');
+  const btns = [...hutils.matchAll(/<a class="hbtn"[^>]*>[\s\S]*?<\/a>/g)].map((m) => m[0]);
+  btns.length === 2 ? ok('exactly two .hbtn anchors') : bad('found ' + btns.length + ' .hbtn anchors, want 2');
+  const [g = '', c = ''] = btns;
+  has(g, 'href="https://gpu.cds.bu.edu"', 'first pill links to the GPU Explorer');
+  has(g, '<span class="gpuword">GPU</span> Explorer', 'first pill reads GPU Explorer with the GPU word in its accent span');
+  has(c, 'href="https://cpu.cds.bu.edu"', 'second pill links to the CPU Explorer');
+  has(c, '<span class="cpuword">CPU</span> Explorer', 'second pill reads CPU Explorer with the CPU word in its accent span');
+  for (const b of btns) {
+    has(b, 'title="CDS members', 'each pill carries a members / sign-in tooltip');
+    not(b, 'target=', "pills navigate in the same tab, like the explorers' own cross-links");
+  }
+  has(styleBlock, '.hutils{position:absolute;top:10px;right:18px;display:flex;gap:8px;z-index:2;align-items:center;}', '.hutils is pinned top-right of the header');
+  has(styleBlock, '.hbtn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:var(--headfg);font:inherit;font-size:0.688rem;padding:3px 10px;border-radius:5px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;}', ".hbtn is the explorers' translucent pill, verbatim");
+  has(styleBlock, '.hbtn:hover{background:rgba(255,255,255,.2);}', '.hbtn hover brightens');
+  has(styleBlock, '.gpuword{color:#baf72e;}', 'GPU word in CDS chartreuse');
+  has(styleBlock, '.cpuword{color:#4cc9db;}', 'CPU word in the cyan the explorers use');
+  has(styleBlock, '.hbtn .gpuword,.hbtn .cpuword{margin-right:.28em;}', 'the accent span keeps its word space inside the inline-flex pill');
+  has(styleBlock, '.hcap{font-size:0.688rem;color:var(--headfg);opacity:.72;margin-right:2px;}', '.hcap is a muted caption on the header ground');
+  has(styleBlock, '@media(max-width:1000px){.hutils{position:static;justify-content:flex-end;margin-top:8px;}}', 'below 1000px the cluster unpins and right-aligns under the lockup');
+}
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);

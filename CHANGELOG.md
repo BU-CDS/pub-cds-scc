@@ -2,7 +2,21 @@
 
 All notable changes to the public cluster page.
 
-## 2026-09-02 — unpublished (pipeline only; the page is unchanged)
+## 2026-09-02 — unpublished
+
+- **Page: explorer links in the header** (2026-09-02, `build_cluster_page.R`,
+  `scripts/test_page.mjs`, `README.md`): a utilities cluster pinned top-right
+  of the header in the pool explorers' own pill design, verbatim (translucent
+  white pills, the pool word in its accent: chartreuse for GPU, cyan for CPU):
+  a muted "Members" caption, then GPU Explorer and CPU Explorer in the panels'
+  left-to-right order, each with a sign-in tooltip, navigating in the same tab
+  as the explorers' own cross-links do. Caption and tooltip because the
+  explorers are org-restricted: an anonymous visitor is redirected to sign-in.
+  Below 1000px the cluster unpins and sits right-aligned under the lockup,
+  which is longer here than on the explorers and collides with pinned pills at
+  about 820px. Twenty new page-test assertions (markup, order, accents,
+  tooltip, same-tab, the CSS verbatim, the narrow rule); gate and validator
+  pass; verified by screenshot at 1440 and 820px.
 
 - **Ops: `refresh_public.sh` refuses to run from the wrong checkout**
   (2026-09-02, `refresh_public.sh`, `scripts/test_refresh_guard.sh`,
