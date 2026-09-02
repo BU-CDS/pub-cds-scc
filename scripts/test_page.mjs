@@ -1029,5 +1029,19 @@ not(html, 'prefers-color-scheme', 'still no theme machinery');
   has(styleBlock, '@media(max-width:1000px){.hutils{position:static;justify-content:flex-end;margin-top:8px;}}', 'below 1000px the cluster unpins and right-aligns under the lockup');
 }
 
+// ---- BU favicon: the head declares the icon inline -- BU's own favicon.ico (the
+// 16x16 ICO www.bu.edu serves, byte for byte) as a data URI -- so the browser never
+// falls back to requesting /favicon.ico, which the page branch does not carry and
+// GitHub Pages answers with a 404 on every load ----
+{
+  const BU_ICO = 'AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAERHPAGBg3wBmZuAAoKDsALW18ADu7vwA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAd3d3d3d3d3d3d3d3d3d3dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABXdzA3dzAAAAcwcXQDcAAABzBwcgBwAAAHdjByAHAAAAcwcHIAcAAAV3c1dQV1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHd3d3d3d3d3d3d3d3d3d3cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';   // https://www.bu.edu/favicon.ico, 318 bytes, fetched 2026-09-02
+  const head = html.slice(0, html.indexOf('</head>'));
+  const icons = [...head.matchAll(/<link\b[^>]*\brel="icon"[^>]*>/g)].map(m => m[0]);
+  icons.length === 1 ? ok('the head carries exactly one rel="icon" link') : bad('rel="icon" links in the head: ' + icons.length + ', want 1');
+  has(head, '<link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,' + BU_ICO + '">', "the icon is BU's favicon.ico inline as a data URI, byte for byte");
+  const at = head.indexOf('<link rel="icon"');
+  (at > head.indexOf('</title>') && at < head.indexOf('googletagmanager.com/gtag/js')) ? ok('the icon link sits after the title and ahead of the Google tag') : bad('the icon link is not between the title and the Google tag');
+}
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);

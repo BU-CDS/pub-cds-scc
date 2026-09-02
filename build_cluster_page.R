@@ -23,6 +23,7 @@
 #   $PUB_CPU_CLONE/assets/faculty_compt_data_sci_signature_toptier_rgb.png
 #   $PUB_CPU_CLONE/assets/WhitneySSmAdvancedSemibold.woff2   (weight 600)
 #   $PUB_CPU_CLONE/assets/WhitneySSmAdvancedBook.woff2       (weight 400)
+#   (+ BU's public favicon.ico, held below as a base64 constant, not a file)
 # Writes: index.html (repo root, gitignored)
 # Run: module load R/4.5.2 && Rscript build_cluster_page.R
 # =====================================================================
@@ -48,6 +49,11 @@ plate_uri     <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "
 emblem_uri    <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "faculty_compt_data_sci_signature_toptier_rgb.png")))
 font_uri      <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedSemibold.woff2")))
 font_uri_book <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedBook.woff2")))
+# BU's favicon.ico -- https://www.bu.edu/favicon.ico, the 16x16 ICO every bu.edu page serves (318 bytes,
+# fetched 2026-09-02) -- inline, so the browser never asks GitHub Pages for a /favicon.ico the page branch
+# does not carry (a 404 on every load). A public brand asset, so it lives here as text rather than in the
+# sibling clone's assets/, which this repo never writes to.
+favicon_uri <- "data:image/x-icon;base64,AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAERHPAGBg3wBmZuAAoKDsALW18ADu7vwA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAd3d3d3d3d3d3d3d3d3d3dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABXdzA3dzAAAAcwcXQDcAAABzBwcgBwAAAHdjByAHAAAAcwcHIAcAAAV3c1dQV1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHd3d3d3d3d3d3d3d3d3d3cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 # ---- helpers ----------------------------------------------------------------
 jround <- function(x) floor(as.numeric(x) + 0.5)   # JS Math.round semantics (round-half-up, x >= 0) so R's server-render and the page's own JS agree bit-for-bit
@@ -391,7 +397,7 @@ GA_ID  <- "G-0B07K1F1MX"   # Google Analytics 4 measurement id for this page's o
 ga_tag <- if (nzchar(GA_ID)) paste0('<script async src="https://www.googletagmanager.com/gtag/js?id=', GA_ID, '"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){window.dataLayer.push(arguments);}gtag("js",new Date());gtag("config","', GA_ID, '");</script>') else ""   # Google's snippet with one change: window.dataLayer.push instead of the bare dataLayer. validate.mjs runs the inline scripts under a shim where a bare dataLayer is undefined, and Google's copy verbatim fails the gate. In a browser the two are the same object.
 html <- paste0(
 r"-----(<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Research Computing at CDS</title>)-----", ga_tag, r"-----(
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Research Computing at CDS</title><link rel="icon" type="image/x-icon" href=")-----", favicon_uri, r"-----(">)-----", ga_tag, r"-----(
 <style>
 :root{
  --t-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
