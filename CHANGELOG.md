@@ -4,18 +4,22 @@ All notable changes to the public cluster page.
 
 ## 2026-09-02 — unpublished
 
-- **Page: BU favicon** (2026-09-02, `build_cluster_page.R`,
-  `scripts/test_page.mjs`): the head declares an icon: BU's own `favicon.ico`,
+- **Page: BU favicon** (2026-09-02, `assets/favicon.ico`, `build_cluster_page.R`,
+  `scripts/test_page.mjs`, `README.md`): the head declares an icon: BU's own `favicon.ico`,
   the 16×16 ICO every bu.edu page serves, inline as a data URI and byte for
   byte the file www.bu.edu serves. The page declared none before, so every load
   asked GitHub Pages for `/favicon.ico`, which the `page` branch does not carry,
-  and logged a 404 in the browser console. The file is `assets/favicon.ico` in
-  the CPU clone (318 bytes), read at build time like the plate, emblem and
-  fonts; the build fails closed without it. The page test pins the head to
-  exactly one `rel="icon"` link, to those bytes, sitting after the title and
-  ahead of the Google tag, and proves the fail-closed read with a rebuild
-  against an `assets/` copy that lacks the icon. Gate, validator and deploy
-  guard pass unchanged.
+  and logged a 404 in the browser console. The file is this repo's own
+  `assets/favicon.ico` (318 bytes), the one asset in the tree: BU's public
+  favicon carries none of the licensing that keeps the fonts, plate and emblem
+  in the sibling clone, and each of the three pages keeps its own copy. The
+  builder reads it at build time like the sibling assets and fails closed
+  without it. The page test pins the head to exactly one `rel="icon"` link,
+  to those bytes, sitting after the title and ahead of the Google tag, and
+  proves the source with two rebuilds against a sibling-assets fixture that
+  has no icon: with `assets/favicon.ico` staged the page carries it, without
+  it the build fails naming the file. Gate, validator and deploy guard pass
+  unchanged.
 
 ## 2026-09-02 — published (cluster.cds.bu.edu)
 

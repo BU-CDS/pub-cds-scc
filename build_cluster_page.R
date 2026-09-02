@@ -23,7 +23,9 @@
 #   $PUB_CPU_CLONE/assets/faculty_compt_data_sci_signature_toptier_rgb.png
 #   $PUB_CPU_CLONE/assets/WhitneySSmAdvancedSemibold.woff2   (weight 600)
 #   $PUB_CPU_CLONE/assets/WhitneySSmAdvancedBook.woff2       (weight 400)
-#   $PUB_CPU_CLONE/assets/favicon.ico                         (BU's favicon, 16x16 ICO)
+# Own asset (base64-embedded; the one asset in this tree -- BU's public favicon carries none of
+# the licensing that keeps the fonts, plate and emblem in the sibling clone):
+#   assets/favicon.ico                                       (BU's favicon, 16x16 ICO)
 # Writes: index.html (repo root, gitignored)
 # Run: module load R/4.5.2 && Rscript build_cluster_page.R
 # =====================================================================
@@ -49,7 +51,7 @@ plate_uri     <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "
 emblem_uri    <- paste0("data:image/png;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "faculty_compt_data_sci_signature_toptier_rgb.png")))
 font_uri      <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedSemibold.woff2")))
 font_uri_book <- paste0("data:font/woff2;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "WhitneySSmAdvancedBook.woff2")))
-favicon_uri   <- paste0("data:image/x-icon;base64,", b64(file.path(PUB_CPU_CLONE, "assets", "favicon.ico")))   # BU's own favicon (www.bu.edu/favicon.ico: 16x16 ICO, 318 bytes), declared inline so no load asks GitHub Pages for a /favicon.ico the page branch does not carry
+favicon_uri   <- paste0("data:image/x-icon;base64,", b64(file.path(ROOT, "assets", "favicon.ico")))   # BU's own favicon (www.bu.edu/favicon.ico: 16x16 ICO, 318 bytes), declared inline so no load asks GitHub Pages for a /favicon.ico the page branch does not carry
 
 # ---- helpers ----------------------------------------------------------------
 jround <- function(x) floor(as.numeric(x) + 0.5)   # JS Math.round semantics (round-half-up, x >= 0) so R's server-render and the page's own JS agree bit-for-bit

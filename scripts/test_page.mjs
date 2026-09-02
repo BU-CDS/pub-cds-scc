@@ -767,6 +767,8 @@ const buildFixturePage = (mutator) => {
   try {
     const pageSrc = readFileSync(join(SDIR, '..', 'build_cluster_page.R'), 'utf8');
     writeFileSync(join(tmp, 'build_cluster_page.R'), pageSrc);
+    mkdirSync(join(tmp, 'assets'));
+    writeFileSync(join(tmp, 'assets', 'favicon.ico'), readFileSync(join(SDIR, '..', 'assets', 'favicon.ico')));   // the one in-tree asset the builder reads
     const fixture = JSON.parse(JSON.stringify(data));
     mutator(fixture);
     mkdirSync(join(tmp, 'output'), { recursive: true });
@@ -1029,12 +1031,13 @@ not(html, 'prefers-color-scheme', 'still no theme machinery');
   has(styleBlock, '@media(max-width:1000px){.hutils{position:static;justify-content:flex-end;margin-top:8px;}}', 'below 1000px the cluster unpins and right-aligns under the lockup');
 }
 
+const BU_ICO = 'AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAERHPAGBg3wBmZuAAoKDsALW18ADu7vwA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAd3d3d3d3d3d3d3d3d3d3dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABXdzA3dzAAAAcwcXQDcAAABzBwcgBwAAAHdjByAHAAAAcwcHIAcAAAV3c1dQV1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHd3d3d3d3d3d3d3d3d3d3cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';   // https://www.bu.edu/favicon.ico, 318 bytes, fetched 2026-09-02 (the bytes in assets/favicon.ico)
+
 // ---- BU favicon: the head declares the icon inline -- BU's own favicon.ico (the
 // 16x16 ICO www.bu.edu serves, byte for byte) as a data URI -- so the browser never
 // falls back to requesting /favicon.ico, which the page branch does not carry and
 // GitHub Pages answers with a 404 on every load ----
 {
-  const BU_ICO = 'AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMwAERHPAGBg3wBmZuAAoKDsALW18ADu7vwA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAd3d3d3d3d3d3d3d3d3d3dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABXdzA3dzAAAAcwcXQDcAAABzBwcgBwAAAHdjByAHAAAAcwcHIAcAAAV3c1dQV1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHd3d3d3d3d3d3d3d3d3d3cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';   // https://www.bu.edu/favicon.ico, 318 bytes, fetched 2026-09-02
   const head = html.slice(0, html.indexOf('</head>'));
   const icons = [...head.matchAll(/<link\b[^>]*\brel="icon"[^>]*>/g)].map(m => m[0]);
   icons.length === 1 ? ok('the head carries exactly one rel="icon" link') : bad('rel="icon" links in the head: ' + icons.length + ', want 1');
@@ -1043,24 +1046,40 @@ not(html, 'prefers-color-scheme', 'still no theme machinery');
   (at > head.indexOf('</title>') && at < head.indexOf('googletagmanager.com/gtag/js')) ? ok('the icon link sits after the title and ahead of the Google tag') : bad('the icon link is not between the title and the Google tag');
 }
 
-// ---- the favicon is read from the CPU clone's assets/ at build time like every other
-// embedded asset, and the build fails closed without it: no fallback, no empty href ----
+// ---- the favicon is this repo's own asset, assets/favicon.ico, read at build time and
+// embedded like the sibling-clone assets, and the build fails closed without it. Two
+// rebuilds against a sibling-assets fixture that carries NO icon prove both: with
+// assets/favicon.ico staged the page carries the icon (so it did not come from the
+// sibling), without it the build fails naming this repo's own file ----
 {
   const PUB_CPU_CLONE = process.env.PUB_CPU_CLONE || '/usr3/bustaff/mhorn/repos/cpu-cds-scc';
-  const tmp = mkdtempSync(join(tmpdir(), 'cluster-page-noicon-'));
-  try {
+  const stage = (withIcon) => {
+    const tmp = mkdtempSync(join(tmpdir(), 'cluster-page-icon-'));
     writeFileSync(join(tmp, 'build_cluster_page.R'), readFileSync(join(SDIR, '..', 'build_cluster_page.R'), 'utf8'));
     mkdirSync(join(tmp, 'output'), { recursive: true });
     writeFileSync(join(tmp, 'output', 'cluster_data.json'), JSON.stringify(data));
     mkdirSync(join(tmp, 'cpu', 'assets'), { recursive: true });
     for (const a of ['bu_plate_white.png', 'faculty_compt_data_sci_signature_toptier_rgb.png', 'WhitneySSmAdvancedSemibold.woff2', 'WhitneySSmAdvancedBook.woff2'])
-      writeFileSync(join(tmp, 'cpu', 'assets', a), readFileSync(join(PUB_CPU_CLONE, 'assets', a)));   // every asset but favicon.ico
-    let err = '';
-    try { execFileSync('Rscript', [join(tmp, 'build_cluster_page.R')], { stdio: 'pipe', env: { ...process.env, PUB_CPU_CLONE: join(tmp, 'cpu') } }); }
-    catch (e) { err = String(e.stderr || e.message); }
-    (err.includes('missing asset') && err.includes('favicon.ico'))
-      ? ok('fixture (assets/ without favicon.ico): the build fails closed naming the missing icon')
-      : bad('fixture (assets/ without favicon.ico): the build did not fail on the missing icon' + (err ? ' -- stderr: ' + err.slice(0, 120) : ' (it succeeded)'));
+      writeFileSync(join(tmp, 'cpu', 'assets', a), readFileSync(join(PUB_CPU_CLONE, 'assets', a)));   // the sibling clone's assets, no icon among them
+    if (withIcon) { mkdirSync(join(tmp, 'assets')); writeFileSync(join(tmp, 'assets', 'favicon.ico'), readFileSync(join(SDIR, '..', 'assets', 'favicon.ico'))); }
+    return tmp;
+  };
+  const build = (tmp) => {
+    try { execFileSync('Rscript', [join(tmp, 'build_cluster_page.R')], { stdio: 'pipe', env: { ...process.env, PUB_CPU_CLONE: join(tmp, 'cpu') } }); return ''; }
+    catch (e) { return String(e.stderr || e.message) || 'build failed'; }
+  };
+  let tmp = stage(true);
+  try {
+    const err = build(tmp);
+    if (err) bad('fixture (own assets/favicon.ico, sibling assets without one): build failed -- ' + err.slice(0, 140));
+    else has(readFileSync(join(tmp, 'index.html'), 'utf8'), 'href="data:image/x-icon;base64,' + BU_ICO + '"', "fixture (own assets/favicon.ico, sibling assets without one): the page carries the icon, so it came from this repo's own assets/");
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+  tmp = stage(false);
+  try {
+    const err = build(tmp);
+    (err.includes('missing asset') && err.includes(join(tmp, 'assets', 'favicon.ico')))
+      ? ok("fixture (no assets/favicon.ico): the build fails closed naming this repo's own assets/favicon.ico")
+      : bad('fixture (no assets/favicon.ico): the build did not fail on this repo\'s own missing icon' + (err ? ' -- stderr: ' + err.slice(0, 140) : ' (it succeeded)'));
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 

@@ -37,7 +37,8 @@ every step is green:
    no host names or registry codes anywhere, totals must reconcile (the
    weekly series against the monthly, the headline against the tables).
 3. `build_cluster_page.R` — renders `index.html` (panels, period selector,
-   totals) with the assets embedded.
+   totals) with the assets embedded: fonts, plate and emblem from the CPU
+   clone, the favicon from this repo's own `assets/`.
 4. `scripts/test_page.mjs` + `validate.mjs` — structure/containment tests and
    a run of the page's inline script under a DOM shim; the gate runs a second
    time over the built HTML.
