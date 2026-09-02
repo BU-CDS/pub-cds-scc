@@ -387,9 +387,11 @@ ov_cpu_deck  <- ov_deck("cpu")
 ov_range_all <- range_text(all_months)
 
 # ---- assemble ----------------------------------------------------------------
+GA_ID  <- "G-0B07K1F1MX"   # Google Analytics 4 measurement id for this page's own property (one property per page). Empty = no tag.
+ga_tag <- if (nzchar(GA_ID)) paste0('<script async src="https://www.googletagmanager.com/gtag/js?id=', GA_ID, '"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){window.dataLayer.push(arguments);}gtag("js",new Date());gtag("config","', GA_ID, '");</script>') else ""   # Google's snippet with one change: window.dataLayer.push instead of the bare dataLayer. validate.mjs runs the inline scripts under a shim where a bare dataLayer is undefined, and Google's copy verbatim fails the gate. In a browser the two are the same object.
 html <- paste0(
 r"-----(<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Research Computing at CDS</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Research Computing at CDS</title>)-----", ga_tag, r"-----(
 <style>
 :root{
  --t-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;

@@ -5,9 +5,10 @@ Computing Cluster: the CPU pool and the GPU pool side by side — the hardware
 in each (every node and card, drawn at capacity), usage totals for a
 selectable period (default: the trailing three complete months), and three
 over-time charts per pool (monthly volume against capacity, weekly rhythm,
-researchers and groups). One `index.html`, one inline script, no server, no
-tracking. Updates quarterly. Two header buttons take CDS members to the
-interactive GPU and CPU explorers (sign-in required).
+researchers and groups). One `index.html`, no server. Google Analytics counts
+visits under BU's digital privacy statement. Updates quarterly. Two header
+buttons take CDS members to the interactive GPU and CPU explorers (sign-in
+required).
 
 ## View it
 

@@ -42,16 +42,26 @@ const rangeTextJS = (months) => {
   return monthLbl(a, !sameYear) + ' – ' + monthLbl(b, true);
 };
 
-// ---- 0. exactly one inline <script>; no external requests / storage / theme machinery ----
-// (the old zero-JS rule is dead per the 2026-08-31 design revision -- inline JS is now required, but it
-// must stay self-contained: no fetch/XHR, no browser storage, no OS-theme detection.)
+// ---- 0. scripts: the app's one inline <script>, plus the Google Analytics tag (its external loader and
+// inline bootstrap) and nothing else. The page's own code stays self-contained: no fetch/XHR, no browser
+// storage, no OS-theme detection. (The zero-JS rule died with the 2026-08-31 design revision; the 2026-09-02
+// analytics decision admits exactly the one external script below.)
 {
   const scriptCount = (html.match(/<script\b/g) || []).length;
-  scriptCount === 1 ? ok('page carries exactly one inline <script>') : bad('found ' + scriptCount + ' <script> tags, want exactly 1');
+  scriptCount === 3 ? ok('page carries exactly three <script> tags: Google loader, its bootstrap, the app') : bad('found ' + scriptCount + ' <script> tags, want exactly 3');
+  const ext = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]*)"/g)].map(m => m[1]);
+  (ext.length === 1 && ext[0] === 'https://www.googletagmanager.com/gtag/js?id=G-0B07K1F1MX') ? ok("the only external script is the Google tag loader with this page's measurement id") : bad('external scripts: ' + JSON.stringify(ext));
+  const cfg = (html.match(/gtag\("config","G-0B07K1F1MX"\)/g) || []).length;
+  cfg === 1 ? ok('one gtag config call with the same id') : bad('gtag config calls: ' + cfg);
+  const ids = new Set(html.match(/\bG-[A-Z0-9]{8,12}\b/g) || []);
+  (ids.size === 1 && ids.has('G-0B07K1F1MX')) ? ok("this page's measurement id is the only one on the page") : bad('measurement ids on the page: ' + JSON.stringify([...ids]));
+  const gaAt = html.indexOf('googletagmanager.com/gtag/js');
+  (gaAt > html.indexOf('<meta charset="utf-8">') && gaAt < html.indexOf('</head>')) ? ok('Google tag sits in the head after the charset meta') : bad('Google tag is outside the head or ahead of the charset meta');
 }
-not(html, '<script src=', 'no externally-sourced <script src=> (inline only)');
+has(html, 'function gtag(){window.dataLayer.push(arguments);}', "gtag() pushes through window.dataLayer (a bare dataLayer is undefined under validate.mjs's shim)");
+not(html, '{dataLayer.push(arguments);}', 'no bare dataLayer reference');
 for (const needle of ['fetch(', 'XMLHttpRequest', 'localStorage', 'document.cookie', 'prefers-color-scheme'])
-  not(html, needle, 'no "' + needle + '" anywhere (no external requests / storage / theme machinery)');
+  not(html, needle, 'no "' + needle + '" anywhere (no external requests / storage / theme machinery in the page\'s own code)');
 
 // ---- 1. containment, not just order: a stray </div> can close a section early while
 // every string check still passes. Tiny stack parser over the static markup (copied

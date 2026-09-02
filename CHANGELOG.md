@@ -4,6 +4,20 @@ All notable changes to the public cluster page.
 
 ## 2026-09-02 — published (cluster.cds.bu.edu)
 
+- **Page: Google Analytics tag** (2026-09-02, `build_cluster_page.R`,
+  `scripts/test_page.mjs`, `README.md`): the page reports visits to its own
+  GA4 property, one property per page across the three CDS pages. The tag sits
+  in the head after the title. It is Google's snippet with one change,
+  `window.dataLayer.push` in place of the bare `dataLayer`: `validate.mjs` runs
+  the inline scripts under a shim where that global is undefined, and Google's
+  copy verbatim fails the gate. The page test's script rule moves from "one
+  inline script, nothing external" to "the app script plus the Google loader
+  and its bootstrap, and no other external script"; the no-fetch, no-storage,
+  no-cookie-code and no-theme-detection rules stay, and the page may carry no
+  measurement id but its own. The README no longer says "no tracking"; the
+  footer's privacy statement link already covered analytics. Gate and validator
+  pass.
+
 - **Page: explorer links in the header** (2026-09-02, `build_cluster_page.R`,
   `scripts/test_page.mjs`, `README.md`): a utilities cluster pinned top-right
   of the header in the pool explorers' own pill design, verbatim (translucent
