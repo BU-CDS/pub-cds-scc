@@ -43,6 +43,11 @@ every step is green:
    branch GitHub Pages serves; refuses any page that reaches outside itself
    or lacks the "updated quarterly" stamp.
 
+Before step 1 the script checks the checkout itself: every step's file must
+exist, and a run that could push (the default) must be on `main`
+(`PUB_EXPECT_BRANCH` names another branch deliberately). `DEPLOY_PUSH=0`
+stages from any branch.
+
 ## Tests
 
 ```
@@ -50,6 +55,7 @@ Rscript scripts/test_cluster_data.R
 node scripts/test_gate.mjs
 node scripts/test_page.mjs
 bash scripts/test_deploy.sh
+bash scripts/test_refresh_guard.sh
 DEPLOY_PUSH=0 ./refresh_public.sh      # full pipeline, nothing pushed
 ```
 

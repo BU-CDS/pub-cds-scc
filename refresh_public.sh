@@ -7,7 +7,9 @@
 # execution check -> de-id gate again over the built page -> publish (deploy.sh).
 #
 # Idempotent + flock-guarded (overlapping runs wait for the lock rather than
-# skip it, so they don't clobber output/index.html) + logged. Local-only:
+# skip it, so they don't clobber output/index.html) + logged. Refuses to start
+# from a checkout that lacks a step's source or, when the run could push, is
+# not on PUB_EXPECT_BRANCH (default main). Local-only:
 # output/, index.html, refresh.log, .alert/, .refresh.lock, config/alert_email
 # are gitignored. DEPLOY_PUSH=0 runs the whole pipeline and reaches deploy.sh
 # same as any other run, but stages the page commit locally without pushing
@@ -83,6 +85,24 @@ acquire_lock(){
     || fail "could not acquire $LOCK within ${PUB_LOCK_WAIT_S:-1800}s -- another refresh is wedged"; }
 
 acquire_lock
+
+# preflight: refuse a checkout that cannot be the production source.
+#   1) every step's file must exist -- catches the 'page' orphan (index.html
+#      only) under ANY branch name, and never false-fails a dev branch.
+for f in "$S/50_cluster_data.R" "$S/gate_cluster.mjs" "$ROOT/build_cluster_page.R" \
+         "$S/test_page.mjs" "$ROOT/validate.mjs" "$ROOT/deploy.sh"; do
+  [ -f "$f" ] || fail "missing source $f -- the checkout is on a non-source branch (page?). Keep the production clone on main."
+done
+#   2) a push-capable run (DEPLOY_PUSH unset or 1) must be on the production
+#      branch, PUB_EXPECT_BRANCH (default main). On by default, not set from the
+#      cron line as the pool dashboards do it, because the hazard is a hand run
+#      inside a dev worktree, which no cron line covers. DEPLOY_PUSH=0 stages
+#      from any branch; a deliberate publish from another branch names it.
+if [ "${DEPLOY_PUSH:-1}" = 1 ]; then
+  want="${PUB_EXPECT_BRANCH:-main}"
+  cur="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+  [ "$cur" = "$want" ] || fail "repo on branch '$cur', expected '$want' -- a push-capable run must come from the production branch. DEPLOY_PUSH=0 stages from here; PUB_EXPECT_BRANCH=$cur publishes from it deliberately."
+fi
 
 module load R/4.5.2 2>>"$LOG" || true
 command -v Rscript >/dev/null 2>&1 || fail "Rscript not on PATH after 'module load R/4.5.2'"

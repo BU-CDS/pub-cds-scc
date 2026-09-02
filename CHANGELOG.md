@@ -2,6 +2,22 @@
 
 All notable changes to the public cluster page.
 
+## 2026-09-02 — unpublished (pipeline only; the page is unchanged)
+
+- **Ops: `refresh_public.sh` refuses to run from the wrong checkout**
+  (2026-09-02, `refresh_public.sh`, `scripts/test_refresh_guard.sh`,
+  `README.md`): a preflight right after the lock. Every pipeline step's file
+  must exist, so a checkout of the `page` orphan (index.html only) is refused
+  under any branch name with a plain reason instead of R's "cannot open
+  file". A run that could push (`DEPLOY_PUSH` unset or 1) must be on
+  `PUB_EXPECT_BRANCH` (default `main`); `DEPLOY_PUSH=0` stages from any
+  branch, and a deliberate publish from another branch names it. The pool
+  dashboards' scripts carry the same pin as a cron-line opt-in; here it is on
+  by default, because the case it closes is a hand run inside a development
+  worktree, which no cron line covers. The quarterly cron line needs no
+  change. Five throwaway-repo cases: main by default, a dev branch by
+  default, a dev branch staged, the override, the sourceless checkout.
+
 ## 2026-09-01 — published (cluster.cds.bu.edu)
 
 - **Docs: inputs and cadence after the GPU-source change** (2026-09-01,
