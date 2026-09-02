@@ -85,6 +85,16 @@ T5B="$WORK/t5b"; mkrepo "$T5B"
 printf '<html><script>fetch("/x")</script>updated quarterly &middot; 2026-08-31</html>\n' > "$T5B/index.html"
 ( cd "$T5B" && DEPLOY_PUSH=0 ./deploy.sh ) >/dev/null 2>&1 \
   && bad "fetch(-calling page was accepted" || ok "fetch(-calling page refused"
+# guard: a sourced script other than the Google Analytics loader is refused, whatever
+# its attributes; the loader itself is accepted
+T5C="$WORK/t5c"; mkrepo "$T5C"
+printf '<html><script async src="https://cdn.example.org/x.js"></script>updated quarterly &middot; 2026-08-31</html>\n' > "$T5C/index.html"
+( cd "$T5C" && DEPLOY_PUSH=0 ./deploy.sh ) >/dev/null 2>&1 \
+  && bad "foreign sourced-script page was accepted" || ok "foreign sourced-script page refused"
+T5D="$WORK/t5d"; mkrepo "$T5D"
+printf '<html><script async src="https://www.googletagmanager.com/gtag/js?id=G-0B07K1F1MX"></script><script>window.dataLayer=window.dataLayer||[];</script>updated quarterly &middot; 2026-08-31</html>\n' > "$T5D/index.html"
+( cd "$T5D" && DEPLOY_PUSH=0 ./deploy.sh ) >/dev/null 2>&1 \
+  && ok "Google loader page accepted" || bad "Google loader page was refused"
 # guard: a page missing the "updated quarterly ·" stamp is refused
 T6="$WORK/t6"; mkrepo "$T6"
 printf '<html>no stamp here</html>\n' > "$T6/index.html"

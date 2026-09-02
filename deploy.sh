@@ -15,13 +15,22 @@ PAGE="$ROOT/index.html"
 # legitimately ships one inline <script> for period switching + KPI recompute.
 # What is still refused, unconditionally (no env var bypasses it): anything
 # that would make the script reach outside the page -- an external request,
-# browser storage, or an externally-sourced <script src=>.
-for needle in 'fetch(' 'XMLHttpRequest' 'localStorage' 'document.cookie' '<script src='; do
+# browser storage, or an externally-sourced script other than the one admitted
+# below.
+for needle in 'fetch(' 'XMLHttpRequest' 'localStorage' 'document.cookie'; do
   if grep -qF -- "$needle" "$PAGE"; then
-    echo "deploy: REFUSED -- page contains '$needle'. Inline scripts are fine; external calls/storage/sourced scripts are not." >&2
+    echo "deploy: REFUSED -- page contains '$needle'. Inline scripts are fine; external calls/storage are not." >&2
     exit 1
   fi
 done
+# sourced scripts: the Google Analytics loader is the one admitted external script
+# (analytics decision of 2026-09-02; scripts/test_page.mjs pins it to exactly one, with
+# this page's own id). Any other <script src=> is refused, whatever its attributes.
+if grep -oE '<script\b[^>]*\bsrc="[^"]*"' "$PAGE" | sed -E 's/.*src="([^"]*)"/\1/' \
+   | grep -vqE '^https://www\.googletagmanager\.com/gtag/js\?id=G-[A-Z0-9]+$'; then
+  echo "deploy: REFUSED -- page sources a script other than the Google Analytics loader. Inline scripts are fine; other sourced scripts are not." >&2
+  exit 1
+fi
 
 # ...and require the "updated quarterly" stamp: a page built from a broken
 # template (or a stray fragment) that carries neither must not publish.

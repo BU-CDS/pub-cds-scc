@@ -16,7 +16,11 @@ All notable changes to the public cluster page.
   no-cookie-code and no-theme-detection rules stay, and the page may carry no
   measurement id but its own. The README no longer says "no tracking"; the
   footer's privacy statement link already covered analytics. Gate and validator
-  pass.
+  pass. `deploy.sh`'s unconditional script guard matches the same rule: it
+  refuses any sourced script other than the Google loader, whatever the tag's
+  attributes (its old literal `<script src=` check missed `<script async
+  src=`); `scripts/test_deploy.sh` covers a foreign loader refused and the
+  Google loader accepted.
 
 - **Page: explorer links in the header** (2026-09-02, `build_cluster_page.R`,
   `scripts/test_page.mjs`, `README.md`): a utilities cluster pinned top-right
