@@ -458,6 +458,7 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 .ft-emblem{height:30px;width:auto;display:block;}
 .ft-link{color:var(--muted);font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;}
 @media(max-width:480px){.pagefoot{gap:12px 18px;}.pagefoot .ft-l{min-width:0;}.ft-emblem{height:auto;max-height:30px;max-width:100%;}}   /* phone footer (2026-09-03, explorers 8826c1e / 857212d): the signature is 351px wide at its 30px height and overran the footer cell on a phone; the cell may shrink and the signature scales to fit */
+@media(pointer:coarse){header{padding-top:16px;padding-bottom:16px;}.hbtn,.seg button,select,.ft-link{min-height:40px;}}   /* touch targets (2026-09-03, explorers f245cf1 / 9f7e525): on a coarse pointer the pills, segments, month select and footer links stand at least 40px tall and the header pads out so the pinned pills stay centred. Keyed on the pointer, not the viewport */
 .ft-link:hover{color:var(--used);text-decoration:underline;}
 .ft-gh{color:var(--muted);}
 .ft-gh:hover{color:var(--used);}
