@@ -2,8 +2,16 @@
 
 All notable changes to the public cluster page.
 
-## 2026-09-02 — unpublished
+## 2026-09-02
 
+- **Page: instant tips on the Explorer pills, no Members caption** (2026-09-02,
+  `build_cluster_page.R`, `scripts/test_page.mjs`): the two header pills carried
+  their sign-in note as a native `title`, which the browser holds for about a
+  second before showing, while every other tip on the page appears at once. The
+  note now rides `data-tip`, so the page's own tip handler shows it instantly and
+  styled like the rest. The muted "Members" caption that opened the cluster is
+  gone: it said what the tip says. Section 23 of the page test asserts the tip
+  text on each pill, no `title`, no caption span, and no caption rule.
 - **Page: BU favicon** (2026-09-02, `assets/favicon.ico`, `build_cluster_page.R`,
   `scripts/test_page.mjs`, `README.md`): the head declares an icon: BU's own `favicon.ico`,
   the 16×16 ICO every bu.edu page serves, inline as a data URI and byte for
