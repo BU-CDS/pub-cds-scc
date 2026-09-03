@@ -1086,5 +1086,17 @@ const BU_ICO = 'AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAAAAAAAAA
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
+// ---- 13. phone layout (2026-09-03, the explorers' rules of the same day): five rules, each pinned as
+// a string since the shim has no layout engine. Before them a 375px phone saw the CPU Pool's four grid
+// columns push its clusters past the viewport (page 402px wide), the GPU Pool stack one cluster per
+// line, the segment labels split into two-line buttons, the footer signature overrun its cell and the
+// lockup break mid-name.
+has(styleBlock, '@media(max-width:800px){.pool-gpu .hwcols,.pool-gpu .hwrow{grid-template-columns:1fr var(--valw);}.pool-cpu .hwcols,.pool-cpu .hwrow{grid-template-columns:1fr var(--valw) var(--ramw);}.hwrow{row-gap:4px;}.hwcols .hwnodes{display:none;}.hwrow .hwnodes{grid-column:1/-1;}}', 'below 800px both pool panels put their clusters on a second grid row spanning the card, the label column takes the slack and the Nodes header goes');
+has(styleBlock, '@media(max-width:480px){.pagefoot{gap:12px 18px;}.pagefoot .ft-l{min-width:0;}.ft-emblem{height:auto;max-height:30px;max-width:100%;}}', 'below 480px the footer signature scales to fit its cell');
+has(styleBlock, '@media(pointer:coarse){header{padding-top:16px;padding-bottom:16px;}.hbtn,.seg button,select,.ft-link{min-height:40px;}}', 'on a coarse pointer the pills, segments, month select and footer links stand at least 40px tall, keyed on the pointer so tablets get it and narrow desktop windows do not');
+has(styleBlock, '@media(max-width:700px){.hsep{display:block;height:0;padding:0;overflow:hidden;}}@media(max-width:480px){header h1{font-size:0.9rem;}}', 'below 700px the title takes its own line under the plate and name, and below 480px the h1 steps down');
+has(styleBlock, '.sechead .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}', 'the section controls wrap the month select under the segments rather than squeezing them');
+has(styleBlock, 'padding:4px 10px;cursor:pointer;color:var(--text);border-radius:0;white-space:nowrap;}', 'a segment label never breaks across lines');
+
 console.log(FAILS ? FAILS + ' FAILED' : 'ALL PASS');
 process.exit(FAILS ? 1 : 0);
