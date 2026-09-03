@@ -431,8 +431,8 @@ h3{font-size:0.85rem;font-weight:600;color:var(--ink);margin:0 0 10px;}
 select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);}#pmonth{font-variant-numeric:tabular-nums;}
 .sechead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--rule);}
 .sechead .ttl{font-size:.8rem;font-weight:700;color:var(--ink);}.sechead .ttl span{font-weight:400;color:var(--muted);margin-left:8px;}
-.sechead .ctl{display:flex;align-items:center;gap:10px;}
-.seg{display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;}.seg button{border:none;border-right:1px solid var(--border);background:var(--surface);font:inherit;font-size:0.75rem;padding:4px 10px;cursor:pointer;color:var(--text);border-radius:0;}.seg button:last-child{border-right:none;}.seg button:hover{background:var(--surface2);}.seg button.on{background:var(--used);color:#fff;}
+.sechead .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;}.seg button{border:none;border-right:1px solid var(--border);background:var(--surface);font:inherit;font-size:0.75rem;padding:4px 10px;cursor:pointer;color:var(--text);border-radius:0;white-space:nowrap;}.seg button:last-child{border-right:none;}.seg button:hover{background:var(--surface2);}.seg button.on{background:var(--used);color:#fff;}
 .hwcols,.hwrow{display:grid;grid-template-columns:var(--lblw) var(--valw) 1fr;column-gap:18px;align-items:center;}.hwcols{font-size:0.75rem;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:2px;}.hwcols span{color:var(--ink);font-weight:bold;}
 .hwrow{padding:5px 0;border-bottom:1px solid var(--grid);}.hwrow:last-child{border-bottom:none;padding-bottom:0;}
 .hwlbl{color:var(--text);white-space:nowrap;}.hwc{text-align:right;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
@@ -450,6 +450,7 @@ select{font:inherit;font-size:0.781rem;padding:3px 6px;border:1px solid var(--bo
 .nodata{color:var(--muted);font-size:0.8rem;padding:8px 0;grid-column:1/-1;}
 .livewrap{margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;}
 .liveupd{color:var(--text);font-size:0.75rem;white-space:nowrap;}
+@media(max-width:360px){.seg button{padding:4px 6px;font-size:0.7rem;}.kpi .kl,.liveupd{white-space:normal;}}   /* the narrowest phones (2026-09-03): the three period segments read Past 3 months, Past 6 months, All months and ran over a 320px card as one row; below 360px they tighten and step down a size rather than break the row, and the tile labels and the updated line, nowrap elsewhere, may wrap. Sits after the rules it overrides: a media rule wins by order */
 .liveupd a{color:inherit;text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:2px;}
 .liveupd a:hover{color:var(--used);text-decoration-color:currentColor;}
 .pagefoot{max-width:min(var(--content-max),98vw);width:100%;margin:0 auto;margin-top:auto;padding:18px var(--content-pad) 30px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;}

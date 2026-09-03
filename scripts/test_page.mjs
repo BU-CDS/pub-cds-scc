@@ -1095,6 +1095,7 @@ has(styleBlock, '@media(max-width:800px){.pool-gpu .hwcols,.pool-gpu .hwrow{grid
 has(styleBlock, '@media(max-width:480px){.pagefoot{gap:12px 18px;}.pagefoot .ft-l{min-width:0;}.ft-emblem{height:auto;max-height:30px;max-width:100%;}}', 'below 480px the footer signature scales to fit its cell');
 has(styleBlock, '@media(pointer:coarse){header{padding-top:16px;padding-bottom:16px;}.hbtn,.seg button,select,.ft-link{min-height:40px;}}', 'on a coarse pointer the pills, segments, month select and footer links stand at least 40px tall, keyed on the pointer so tablets get it and narrow desktop windows do not');
 has(styleBlock, '@media(max-width:700px){.hsep{display:block;height:0;padding:0;overflow:hidden;}}@media(max-width:480px){header h1{font-size:0.9rem;}}', 'below 700px the title takes its own line under the plate and name, and below 480px the h1 steps down');
+has(styleBlock, '@media(max-width:360px){.seg button{padding:4px 6px;font-size:0.7rem;}.kpi .kl,.liveupd{white-space:normal;}}', 'below 360px the period segments tighten and step down a size so the row holds on the narrowest phones');
 has(styleBlock, '.sechead .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}', 'the section controls wrap the month select under the segments rather than squeezing them');
 has(styleBlock, 'padding:4px 10px;cursor:pointer;color:var(--text);border-radius:0;white-space:nowrap;}', 'a segment label never breaks across lines');
 
